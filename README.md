@@ -1,9 +1,9 @@
-# 🦄 Unihra Python SDK
+# 🛠️ Unihra Python SDK
 
 [![PyPI version](https://img.shields.io/pypi/v/unihra.svg)](https://pypi.org/project/unihra/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/unihra.svg)](https://pypi.org/project/unihra/)
-[![License](https://img.shields.io/pypi/l/unihra.svg)](https://github.com/Unihra/unihra_sdk)
-[![Build Status](https://github.com/unihra/python-sdk/actions/workflows/publish.yml/badge.svg)](https://github.com/Unihra/unihra_sdk/actions)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/Unihra/unihra_sdk/blob/main/LICENSE)
+[![Build Status](https://github.com/Unihra/unihra_sdk/actions/workflows/publish.yml/badge.svg)](https://github.com/Unihra/unihra_sdk/actions)
 
 Official Python SDK for Unihra API. Enterprise-grade SEO analysis with SSE streaming, Pandas integration, and Jupyter support.
 
@@ -57,7 +57,8 @@ client = UnihraClient(api_key="YOUR_API_KEY", max_retries=3)
 # Blocks until analysis is complete
 result = client.analyze(
     own_page="https://mysite.com/product",
-    competitors=["https://competitor.com/item1", "https://competitor.com/item2"]
+    competitors=["https://competitor.com/item1", "https://competitor.com/item2"],
+    lang="en"
 )
 
 print(f"Task ID: {result.get('task_id')}")

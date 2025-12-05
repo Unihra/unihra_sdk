@@ -26,7 +26,7 @@ class UnihraClient:
     - Automatic SSE stream handling.
     - Response normalization (converts API keys to snake_case).
     - Smart retries for network stability.
-    - Pandas and Excel export integration.
+    - Pandas and Excel export integration (Multi-sheet support).
     - Visual progress bars for Jupyter/Console.
     """
 
@@ -253,8 +253,10 @@ class UnihraClient:
         Save the full analysis result to a file.
         Format is detected by extension (.csv or .xlsx).
         
-        :param result: The dictionary returned by .analyze()
-        :param filename: Output filename (e.g. 'seo.xlsx')
+        Includes tabs for:
+        1. Word Analysis (block_comparison)
+        2. N-Grams (ngrams_analysis)
+        3. DrMaxs (separate tab for each metric: frequency, tfidf, etc.)
         """
         try:
             import pandas as pd
@@ -265,6 +267,9 @@ class UnihraClient:
         df_blocks = pd.DataFrame(result.get("block_comparison", []))
         df_ngrams = pd.DataFrame(result.get("ngrams_analysis", []))
         
+        # Get DrMaxs data (dictionary of lists)
+        drmaxs_data = result.get("drmaxs", {})
+
         if filename.endswith(".csv"):
             # CSV supports only one table, saving the main comparison block
             df_blocks.to_csv(filename, index=False, encoding='utf-8-sig')
@@ -280,3 +285,11 @@ class UnihraClient:
                     df_blocks.to_excel(writer, sheet_name="Word Analysis", index=False)
                 if not df_ngrams.empty:
                     df_ngrams.to_excel(writer, sheet_name="N-Grams", index=False)
+                if drmaxs_data and isinstance(drmaxs_data, dict):
+                    for subkey, subdata in drmaxs_data.items():
+                        if subdata and isinstance(subdata, list):
+                            df_dr = pd.DataFrame(subdata)
+                            safe_name = subkey.replace("_", " ").title()
+                            sheet_name = f"DrMaxs {safe_name}"[:31]
+                            
+                            df_dr.to_excel(writer, sheet_name=sheet_name, index=False)
