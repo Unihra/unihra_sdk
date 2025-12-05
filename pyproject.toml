@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "unihra"
+version = "1.0.0"
+description = "Official Python Client for Unihra API"
+authors = ["Unihra Team <dev@unihra.ru>"]
+readme = "README.md"
+license = "MIT"
+homepage = "https://unihra.ru"
+repository = "https://github.com/Unihra/unihra_sdk"
+keywords = ["unihra", "seo", "api", "sdk"]
+packages = [{include = "unihra", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+requests = "^2.31.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+ruff = "^0.3.0"
+mypy = "^1.8.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
