@@ -17,6 +17,12 @@ from .exceptions import (
 )
 
 BASE_URL = "https://unihra.ru"
+ACTION_MAP = {
+    "Добавить": "add",
+    "Увеличить": "increase",
+    "Уменьшить": "decrease",
+    "Ок": "ok"
+}
 
 class UnihraClient:
     """
@@ -198,12 +204,15 @@ class UnihraClient:
 
                                 raise_for_error_code(code, msg, data)
                             
-                            # --- SUCCESS & NORMALIZATION ---
                             if state == "SUCCESS":
                                 raw_result = data.get("result", {})
-                                # Normalize keys to snake_case for Python consistency
                                 normalized_result = self._normalize_keys(raw_result)
-                                data["result"] = normalized_result
+                                if lang == 'en':
+                                    final_result = self._translate_action_values(normalized_result)
+                                else:
+                                    final_result = normalized_result
+
+                                data["result"] = final_result
                                 yield data
                                 break
                             
@@ -228,7 +237,15 @@ class UnihraClient:
             new_data[new_key] = value
         return new_data
 
-    # --- Data Export Features ---
+    def _translate_action_values(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Translates 'action_needed' values from Russian to English."""
+        if "block_comparison" in result and isinstance(result["block_comparison"], list):
+            for item in result["block_comparison"]:
+                if "action_needed" in item:
+                    russian_action = item["action_needed"]
+                    # Use .get() to safely handle unknown values from API
+                    item["action_needed"] = ACTION_MAP.get(russian_action, russian_action)
+        return result
 
     def get_dataframe(self, result: Dict[str, Any], section: str = "block_comparison"):
         """
