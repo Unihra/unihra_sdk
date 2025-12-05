@@ -251,30 +251,21 @@ class UnihraClient:
     def save_report(self, result: Dict[str, Any], filename: str = "report.xlsx"):
         """
         Save the full analysis result to a file.
-        Format is detected by extension (.csv or .xlsx).
-        
-        Includes tabs for:
-        1. Word Analysis (block_comparison)
-        2. N-Grams (ngrams_analysis)
-        3. DrMaxs (separate tab for each metric: frequency, tfidf, etc.)
+        Includes Block Comparison, N-Grams, and DrMaxs.
         """
         try:
             import pandas as pd
         except ImportError:
             raise UnihraDependencyError("Pandas is required. Run: pip install pandas openpyxl")
 
-        # Use normalized keys
         df_blocks = pd.DataFrame(result.get("block_comparison", []))
-        df_ngrams = pd.DataFrame(result.get("ngrams_analysis", []))
-        
-        # Get DrMaxs data (dictionary of lists)
+        ngrams_data = result.get("ngrams_analysis") or result.get("n-grams_analysis") or []
+        df_ngrams = pd.DataFrame(ngrams_data)
         drmaxs_data = result.get("drmaxs", {})
 
         if filename.endswith(".csv"):
-            # CSV supports only one table, saving the main comparison block
             df_blocks.to_csv(filename, index=False, encoding='utf-8-sig')
         else:
-            # Excel supports multiple sheets
             try:
                 import openpyxl
             except ImportError:
@@ -291,5 +282,4 @@ class UnihraClient:
                             df_dr = pd.DataFrame(subdata)
                             safe_name = subkey.replace("_", " ").title()
                             sheet_name = f"DrMaxs {safe_name}"[:31]
-                            
                             df_dr.to_excel(writer, sheet_name=sheet_name, index=False)
