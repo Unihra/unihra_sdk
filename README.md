@@ -99,6 +99,9 @@ The SDK returns a dictionary reflecting the API response. The most important sec
 | `ngrams_analysis` | Analysis of phrases (Bigrams/Trigrams). |
 | `drmaxs` | Vector analysis (TF-IDF, Similarity scores). |
 
+**Note:** The API returns `action_needed` values in Russian. When `lang='en'` is specified, the SDK **automatically translates** these values into English to ensure a consistent and predictable interface for your scripts. If `lang='ru'` is used (default), the values will remain in Russian (`"Добавить"`, `"Увеличить"`, etc.).
+
+
 **Full JSON Schema:**
 ```json
 {
@@ -233,9 +236,11 @@ result = client.analyze(
 | Поле | Описание |
 |------|----------|
 | `block_comparison` | Сравнение частотности слов (Word Bag). |
-| `action_needed` | **Главная метрика**. Рекомендация: `add` (добавить), `increase` (увеличить), `decrease` (уменьшить) или `ok`. |
+| `action_needed` | **Главная метрика.** Рекомендации на русском: `Добавить`, `Увеличить`, `Уменьшить`, `Ок`. |
 | `ngrams_analysis` | Анализ фраз (биграммы и триграммы). |
 | `drmaxs` | Семантический векторный анализ. |
+
+**Примечание:** API всегда возвращает значения `action_needed` на русском языке. При `lang='ru'` (по умолчанию) библиотека сохраняет эти значения в оригинальном виде. Если вам нужен предсказуемый английский интерфейс (например, для скриптов), просто вызовите анализ с параметром `lang='en'`, и SDK автоматически переведет их в `"add"`, `"increase"`, `"decrease"`, `"ok"`.
 
 **Пример JSON ответа:**
 ```json
