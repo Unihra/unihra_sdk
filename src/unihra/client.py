@@ -265,7 +265,7 @@ class UnihraClient:
         data = result.get(normalized_section, [])
         return pd.DataFrame(data)
 
-    def save_report(self, result: Dict[str, Any], filename: str = "report.xlsx"):
+    def save_report(self, result: Dict[str, Any], filename: str = "report.xlsx", style_output: bool = True):
         """
         Save the full analysis result to a file.
         Includes Block Comparison, N-Grams, and DrMaxs.
@@ -290,9 +290,13 @@ class UnihraClient:
 
             with pd.ExcelWriter(filename, engine='openpyxl') as writer:
                 if not df_blocks.empty:
-                    df_blocks.to_excel(writer, sheet_name="Word Analysis", index=False)
+                    sheet = "Word Analysis"
+                    df_blocks.to_excel(writer, sheet_name=sheet, index=False)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_blocks)
                 if not df_ngrams.empty:
-                    df_ngrams.to_excel(writer, sheet_name="N-Grams", index=False)
+                    sheet = "N-Grams"
+                    df_ngrams.to_excel(writer, sheet_name=sheet, index=False)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_ngrams)
                 if drmaxs_data and isinstance(drmaxs_data, dict):
                     for subkey, subdata in drmaxs_data.items():
                         if subdata and isinstance(subdata, list):
@@ -300,3 +304,34 @@ class UnihraClient:
                             safe_name = subkey.replace("_", " ").title()
                             sheet_name = f"DrMaxs {safe_name}"[:31]
                             df_dr.to_excel(writer, sheet_name=sheet_name, index=False)
+                            if style_output: self._style_worksheet(writer.sheets[sheet_name], df_dr)
+
+    def _style_worksheet(self, worksheet, df):
+        """
+        Internal method to apply professional styling:
+        1. Auto-width for columns.
+        2. Conditional formatting (Green/Red) based on 'present_on_own_page'.
+        """
+        from openpyxl.utils import get_column_letter
+        from openpyxl.styles import PatternFill
+        for idx, col in enumerate(df.columns):
+            max_len = len(str(col))
+            for val in df[col]:
+                if val is not None:
+                    max_len = max(max_len, len(str(val)))
+            final_width = min(max_len + 2, 50) 
+            worksheet.column_dimensions[get_column_letter(idx + 1)].width = final_width
+        if 'present_on_own_page' in df.columns:
+            # Pastel Green (Presence) / Pastel Red (Absence)
+            green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+            bool_col_idx = df.columns.get_loc('present_on_own_page') + 1
+            target_cols_indices = []
+            for target in ['word', 'lemma', 'ngram']:
+                if target in df.columns:
+                    target_cols_indices.append(df.columns.get_loc(target) + 1)
+            for row in range(2, worksheet.max_row + 1):
+                is_present = worksheet.cell(row=row, column=bool_col_idx).value
+                fill_color = green_fill if is_present else red_fill
+                for col_idx in target_cols_indices:
+                    worksheet.cell(row=row, column=col_idx).fill = fill_color

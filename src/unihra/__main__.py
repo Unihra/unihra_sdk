@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--save", help="Filename to save report (e.g. analysis.xlsx or .csv)")
     parser.add_argument("--retries", type=int, default=0, help="Max retries for connection stability")
     parser.add_argument("--verbose", action="store_true", help="Show real-time progress")
+    parser.add_argument("--no-style", action="store_true", help="Disable Excel styling (colors, auto-width)")
 
     args = parser.parse_args()
     
@@ -31,26 +32,18 @@ def main():
     try:
         if args.verbose:
             print(f"🚀 Starting analysis for {args.own}...")
-            # Stream mode
-            result = {}
-            for event in client.analyze_stream(args.own, args.comp, args.lang):
-                state = event.get("state")
-                msg = f"Status: {state}"
-                if "progress" in event:
-                    msg += f" ({event['progress']}%)"
-                print(f"\r{msg}", end="", flush=True)
-                
-                if state == "SUCCESS":
-                    result = event.get("result", {})
-                    print("\n✅ Done!")
-        else:
-            # Silent mode
-            result = client.analyze(args.own, args.comp, args.lang)
+        
+        result = client.analyze(args.own, args.comp, args.lang, verbose=args.verbose)
+        
+        if args.verbose:
+            print("\n✅ Done!")
 
         # Output logic
         if args.save:
-            print(f"💾 Saving report to {args.save}...")
-            client.save_report(result, args.save)
+            apply_styling = not args.no_style
+            print(f"💾 Saving report to {args.save} (Styling: {apply_styling})...")
+            client.save_report(result, args.save, style_output=apply_styling)
+            
         elif not args.verbose:
             # If not saving and not verbose, dump JSON to stdout
             print(json.dumps(result, indent=2, ensure_ascii=False))

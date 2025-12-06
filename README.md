@@ -73,6 +73,9 @@ df = client.get_dataframe(result, section="block_comparison")
 
 # Save full report (creates multiple sheets for Words and N-grams)
 client.save_report(result, "seo_report.xlsx")
+
+# Save a raw data file without styling
+client.save_report(result, "raw_data.xlsx", style_output=False)
 ```
 
 ### 🪐 Jupyter Notebook Support
@@ -152,6 +155,9 @@ You can run analysis directly from the terminal:
 ```bash
 # Analyze and save to Excel with verbose output
 python -m unihra --key "KEY" --own "https://site.com" --comp "https://comp.com" --save report.xlsx --verbose
+
+# Save a raw report without any styling
+python -m unihra --key "KEY" --own "https://site.com" --comp "https://comp.com" --save raw_report.xlsx --no-style
 ```
 
 ### ⚠️ Exception Handling
@@ -214,6 +220,9 @@ df = client.get_dataframe(result, section="block_comparison")
 
 # Сохранить полный отчет (создаст вкладки "Word Analysis" и "N-Grams")
 client.save_report(result, "отчет.xlsx")
+
+# Сохранить "сырые" данные без стилизации
+client.save_report(result, "отчет.xlsx", style_output=False)
 ```
 
 ### 🪐 Поддержка Jupyter Notebook
@@ -291,6 +300,9 @@ result = client.analyze(
 ```bash
 # Запуск анализа с сохранением в Excel и выводом прогресса
 python -m unihra --key "КЛЮЧ" --own "https://site.com" --comp "https://comp.com" --save report.xlsx --verbose
+
+# Сохранить отчет без стилей
+python -m unihra --key "КЛЮЧ" --own "https://site.com" --comp "https://comp.com" --save raw_report.xlsx --no-style
 ```
 
 ### ⚠️ Обработка ошибок
