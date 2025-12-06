@@ -310,28 +310,40 @@ class UnihraClient:
         """
         Internal method to apply professional styling:
         1. Auto-width for columns.
-        2. Conditional formatting (Green/Red) based on 'present_on_own_page'.
+        2. Conditional formatting (Green/Red).
         """
         from openpyxl.utils import get_column_letter
         from openpyxl.styles import PatternFill
         for idx, col in enumerate(df.columns):
-            max_len = len(str(col))
-            for val in df[col]:
-                if val is not None:
-                    max_len = max(max_len, len(str(val)))
+            max_len = max(
+                [len(str(s)) for s in df[col].astype(str).values] + [len(col)]
+            )
             final_width = min(max_len + 2, 50) 
             worksheet.column_dimensions[get_column_letter(idx + 1)].width = final_width
+        bool_col_name = None
         if 'present_on_own_page' in df.columns:
-            # Pastel Green (Presence) / Pastel Red (Absence)
-            green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-            red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-            bool_col_idx = df.columns.get_loc('present_on_own_page') + 1
-            target_cols_indices = []
-            for target in ['word', 'lemma', 'ngram']:
-                if target in df.columns:
-                    target_cols_indices.append(df.columns.get_loc(target) + 1)
-            for row in range(2, worksheet.max_row + 1):
-                is_present = worksheet.cell(row=row, column=bool_col_idx).value
-                fill_color = green_fill if is_present else red_fill
-                for col_idx in target_cols_indices:
-                    worksheet.cell(row=row, column=col_idx).fill = fill_color
+            bool_col_name = 'present_on_own_page'
+        elif 'own_page' in df.columns and df['own_page'].dtype == 'bool':
+            bool_col_name = 'own_page'
+        if not bool_col_name:
+            return
+        green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        
+        bool_col_idx = df.columns.get_loc(bool_col_name) + 1
+        target_cols_indices = []
+        
+        for target in ['word', 'lemma', 'ngram']:
+            if target in df.columns:
+                target_cols_indices.append(df.columns.get_loc(target) + 1)
+        for row in range(2, worksheet.max_row + 1):
+            is_present = worksheet.cell(row=row, column=bool_col_idx).value
+            if is_present is True:
+                fill_color = green_fill
+            elif is_present is False:
+                fill_color = red_fill
+            else:
+                continue
+            
+            for col_idx in target_cols_indices:
+                worksheet.cell(row=row, column=col_idx).fill = fill_color
