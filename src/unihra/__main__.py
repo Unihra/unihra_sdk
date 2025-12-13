@@ -12,6 +12,9 @@ def main():
     parser.add_argument("--own", required=True, help="Your page URL")
     parser.add_argument("--comp", required=True, action="append", help="Competitor URL (repeatable)")
     
+    # Optional Context Query
+    parser.add_argument("--query", action="append", help="Target search query for Context Analysis (repeatable)")
+    
     # Options
     parser.add_argument("--lang", default="ru", choices=["ru", "en"], help="Language")
     parser.add_argument("--save", help="Filename to save report (e.g. analysis.xlsx or .csv)")
@@ -32,8 +35,16 @@ def main():
     try:
         if args.verbose:
             print(f"🚀 Starting analysis for {args.own}...")
+            if args.query:
+                print(f"🔎 Context Queries: {args.query}")
         
-        result = client.analyze(args.own, args.comp, args.lang, verbose=args.verbose)
+        result = client.analyze(
+            own_page=args.own, 
+            competitors=args.comp, 
+            queries=args.query,
+            lang=args.lang, 
+            verbose=args.verbose
+        )
         
         if args.verbose:
             print("\n✅ Done!")
