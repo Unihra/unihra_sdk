@@ -5,7 +5,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/unihra.svg?style=flat-square&color=blue)](https://pypi.org/project/unihra/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/unihra.svg?style=flat-square)](https://pypi.org/project/unihra/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/Unihra/unihra_sdk/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/pypi/dm/unihra?style=flat-square&color=orange)](https://pypi.org/project/unihra/)
 
 **Enterprise-grade SEO & Semantic Analysis SDK.**<br>
 *Compare content, find semantic gaps, and generate structure recommendations using Vector AI & Zone Analysis.*
