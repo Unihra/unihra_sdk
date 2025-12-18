@@ -367,12 +367,18 @@ class UnihraClient:
         Internal method to apply professional styling:
         1. Auto-width for columns (Compresses ID columns).
         2. Conditional formatting based on sheet type and values.
+        3. Headers: Dark background for normal cols, No background for tech cols.
         """
         from openpyxl.utils import get_column_letter
         from openpyxl.styles import PatternFill, Font, Alignment
 
+        # Styles for normal columns
         header_font = Font(bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="363636", end_color="363636", fill_type="solid")
+        
+        # Styles for technical columns (compressed)
+        # Black text so it's visible if expanded, but no background fill
+        tech_header_font = Font(bold=True, color="000000") 
         
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
         red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
@@ -381,8 +387,17 @@ class UnihraClient:
 
         # 1. Format Headers
         for cell in worksheet[1]:
-            cell.font = header_font
-            cell.fill = header_fill
+            col_name = str(cell.value) if cell.value else ""
+            
+            if col_name in tech_cols:
+                # Tech column: No background fill, black text
+                cell.font = tech_header_font
+                cell.fill = PatternFill(fill_type=None)
+            else:
+                # Normal column: Dark background, white text
+                cell.font = header_font
+                cell.fill = header_fill
+                
             cell.alignment = Alignment(horizontal='center')
 
         # 2. Auto-width with compression for IDs
