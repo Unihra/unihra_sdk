@@ -274,6 +274,19 @@ class UnihraClient:
         data = result.get(normalized_section, [])
         return pd.DataFrame(data)
 
+    def _reorder_tech_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Moves technical ID columns to the end of the DataFrame.
+        """
+        tech_cols = ['id', 'block_id', 'analysis_id']
+        existing_tech = [c for c in df.columns if c in tech_cols]
+        main_cols = [c for c in df.columns if c not in tech_cols]
+        
+        if not existing_tech:
+            return df
+            
+        return df[main_cols + existing_tech]
+
     def save_report(self, result: Dict[str, Any], filename: str = "report.xlsx", style_output: bool = True):
         """
         Save the full analysis result to a file.
@@ -299,6 +312,8 @@ class UnihraClient:
 
         if filename.endswith(".csv"):
             # CSV export is limited to the main block comparison for simplicity
+            if not df_blocks.empty:
+                df_blocks = self._reorder_tech_columns(df_blocks)
             df_blocks.to_csv(filename, index=False, encoding='utf-8-sig')
         else:
             try:
@@ -310,41 +325,47 @@ class UnihraClient:
                 # 1. Semantic Gaps (High Priority)
                 if not df_gaps.empty:
                     sheet = "Semantic Gaps"
-                    # Reorder columns for readability if they exist in the DataFrame
+                    # Define desired order but keep IDs at the end if they exist
                     desired_cols = ['lemma', 'recommendation', 'context_snippet', 'gap', 'coverage_percent', 'competitor_avg_score', 'own_score']
                     existing_cols = [c for c in desired_cols if c in df_gaps.columns]
                     other_cols = [c for c in df_gaps.columns if c not in desired_cols]
                     
                     df_gaps_ordered = df_gaps[existing_cols + other_cols]
+                    df_gaps_ordered = self._reorder_tech_columns(df_gaps_ordered)
+                    
                     df_gaps_ordered.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_gaps_ordered, sheet_type="gaps")
 
                 # 2. Word Analysis
                 if not df_blocks.empty:
                     sheet = "Word Analysis"
-                    df_blocks.to_excel(writer, sheet_name=sheet, index=False)
-                    if style_output: self._style_worksheet(writer.sheets[sheet], df_blocks, sheet_type="word_analysis")
+                    df_blocks_ordered = self._reorder_tech_columns(df_blocks)
+                    df_blocks_ordered.to_excel(writer, sheet_name=sheet, index=False)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_blocks_ordered, sheet_type="word_analysis")
                 
                 # 3. N-Grams
                 if not df_ngrams.empty:
                     sheet = "N-Grams"
-                    df_ngrams.to_excel(writer, sheet_name=sheet, index=False)
-                    if style_output: self._style_worksheet(writer.sheets[sheet], df_ngrams, sheet_type="ngrams")
+                    df_ngrams_ordered = self._reorder_tech_columns(df_ngrams)
+                    df_ngrams_ordered.to_excel(writer, sheet_name=sheet, index=False)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_ngrams_ordered, sheet_type="ngrams")
                 
                 # 4. DrMaxs Vectors
                 if drmaxs_data and isinstance(drmaxs_data, dict):
                     for subkey, subdata in drmaxs_data.items():
                         if subdata and isinstance(subdata, list):
                             df_dr = pd.DataFrame(subdata)
+                            df_dr_ordered = self._reorder_tech_columns(df_dr)
+                            
                             safe_name = subkey.replace("_", " ").title().replace("By", "")
                             sheet_name = f"Vectors {safe_name}"[:31] # Excel limit is 31 chars
-                            df_dr.to_excel(writer, sheet_name=sheet_name, index=False)
-                            if style_output: self._style_worksheet(writer.sheets[sheet_name], df_dr, sheet_type="vectors")
+                            df_dr_ordered.to_excel(writer, sheet_name=sheet_name, index=False)
+                            if style_output: self._style_worksheet(writer.sheets[sheet_name], df_dr_ordered, sheet_type="vectors")
 
     def _style_worksheet(self, worksheet, df, sheet_type="generic"):
         """
         Internal method to apply professional styling:
-        1. Auto-width for columns.
+        1. Auto-width for columns (Compresses ID columns).
         2. Conditional formatting based on sheet type and values.
         """
         from openpyxl.utils import get_column_letter
@@ -356,15 +377,22 @@ class UnihraClient:
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
         red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
         
+        tech_cols = ['id', 'block_id', 'analysis_id']
+
         # 1. Format Headers
         for cell in worksheet[1]:
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal='center')
 
-        # 2. Auto-width
+        # 2. Auto-width with compression for IDs
         for idx, col in enumerate(df.columns):
-            # Calculate max length of content or header
+            if col in tech_cols:
+                # Compress technical columns
+                worksheet.column_dimensions[get_column_letter(idx + 1)].width = 3
+                continue
+
+            # Calculate max length of content or header for normal columns
             max_len = max(
                 [len(str(s)) for s in df[col].astype(str).values] + [len(col)]
             )
@@ -379,7 +407,6 @@ class UnihraClient:
 
         if sheet_type == "gaps":
             # In Gaps list: if own_score = 0, color 'lemma' cells. 
-            # Assuming 0 is bad (Red), >0 is good (Green).
             if 'own_score' in col_map and 'lemma' in col_map:
                 score_idx = col_map['own_score']
                 lemma_idx = col_map['lemma']
