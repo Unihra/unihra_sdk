@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "unihra"
-version = "1.1.0"
+version = "1.1.1"
 description = "Official Python Client for Unihra API"
 authors = ["Unihra Team <dev@unihra.ru>"]
 readme = "README.md"
