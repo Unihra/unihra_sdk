@@ -317,19 +317,19 @@ class UnihraClient:
                     
                     df_gaps_ordered = df_gaps[existing_cols + other_cols]
                     df_gaps_ordered.to_excel(writer, sheet_name=sheet, index=False)
-                    if style_output: self._style_worksheet(writer.sheets[sheet], df_gaps_ordered)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_gaps_ordered, sheet_type="gaps")
 
                 # 2. Word Analysis
                 if not df_blocks.empty:
                     sheet = "Word Analysis"
                     df_blocks.to_excel(writer, sheet_name=sheet, index=False)
-                    if style_output: self._style_worksheet(writer.sheets[sheet], df_blocks)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_blocks, sheet_type="word_analysis")
                 
                 # 3. N-Grams
                 if not df_ngrams.empty:
                     sheet = "N-Grams"
                     df_ngrams.to_excel(writer, sheet_name=sheet, index=False)
-                    if style_output: self._style_worksheet(writer.sheets[sheet], df_ngrams)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_ngrams, sheet_type="ngrams")
                 
                 # 4. DrMaxs Vectors
                 if drmaxs_data and isinstance(drmaxs_data, dict):
@@ -339,13 +339,13 @@ class UnihraClient:
                             safe_name = subkey.replace("_", " ").title().replace("By", "")
                             sheet_name = f"Vectors {safe_name}"[:31] # Excel limit is 31 chars
                             df_dr.to_excel(writer, sheet_name=sheet_name, index=False)
-                            if style_output: self._style_worksheet(writer.sheets[sheet_name], df_dr)
+                            if style_output: self._style_worksheet(writer.sheets[sheet_name], df_dr, sheet_type="vectors")
 
-    def _style_worksheet(self, worksheet, df):
+    def _style_worksheet(self, worksheet, df, sheet_type="generic"):
         """
         Internal method to apply professional styling:
         1. Auto-width for columns.
-        2. Conditional formatting (Green/Red).
+        2. Conditional formatting based on sheet type and values.
         """
         from openpyxl.utils import get_column_letter
         from openpyxl.styles import PatternFill, Font, Alignment
@@ -374,35 +374,64 @@ class UnihraClient:
 
         # 3. Conditional Formatting
         
-        # Logic for Word Analysis: Highlight presence
-        bool_col_name = None
-        if 'present_on_own_page' in df.columns:
-            bool_col_name = 'present_on_own_page'
-        elif 'own_page' in df.columns and df['own_page'].dtype == 'bool':
-            bool_col_name = 'own_page'
-        
-        # Logic for Semantic Gaps: Highlight critical gaps
-        gap_col_idx = df.columns.get_loc('gap') + 1 if 'gap' in df.columns else None
-        
-        for row in range(2, worksheet.max_row + 1):
-            # Styling for presence boolean (Green if True, Red if False)
-            if bool_col_name:
-                bool_col_idx = df.columns.get_loc(bool_col_name) + 1
-                is_present = worksheet.cell(row=row, column=bool_col_idx).value
+        # Helper to map dataframe column names to Excel column indices (1-based)
+        col_map = {name: i + 1 for i, name in enumerate(df.columns)}
+
+        if sheet_type == "gaps":
+            # In Gaps list: if own_score = 0, color 'lemma' cells. 
+            # Assuming 0 is bad (Red), >0 is good (Green).
+            if 'own_score' in col_map and 'lemma' in col_map:
+                score_idx = col_map['own_score']
+                lemma_idx = col_map['lemma']
                 
-                fill_color = None
-                if is_present is True:
-                    fill_color = green_fill
-                elif is_present is False:
-                    fill_color = red_fill
+                for row in range(2, worksheet.max_row + 1):
+                    score_val = worksheet.cell(row=row, column=score_idx).value
+                    # Check if score is effectively 0
+                    try:
+                        is_missing = float(score_val) == 0 if score_val is not None else True
+                    except (ValueError, TypeError):
+                        is_missing = True
+                    
+                    if is_missing:
+                        worksheet.cell(row=row, column=lemma_idx).fill = red_fill
+                    else:
+                        worksheet.cell(row=row, column=lemma_idx).fill = green_fill
+
+        else:
+            # For Word Analysis, N-Grams, and Vectors
+            # Determine target columns based on sheet type
+            target_cols = []
+            if sheet_type == "word_analysis":
+                # Paint id, block_id, word, lemma
+                target_names = ["id", "block_id", "word", "lemma"]
+                target_cols = [col_map[c] for c in target_names if c in col_map]
+            elif sheet_type == "ngrams":
+                # Paint id, block_id, ngram
+                target_names = ["id", "block_id", "ngram"]
+                target_cols = [col_map[c] for c in target_names if c in col_map]
+            elif sheet_type == "vectors":
+                # Paint id, analysis_id, word
+                target_names = ["id", "analysis_id", "word"]
+                target_cols = [col_map[c] for c in target_names if c in col_map]
+
+            # Logic: Check bool 'present_on_own_page'
+            bool_col = 'present_on_own_page'
+            # Fallback for vectors if column name differs but logic implies existence check
+            if bool_col not in col_map and 'present_in_own' in col_map:
+                 bool_col = 'present_in_own'
+
+            if bool_col in col_map and target_cols:
+                bool_idx = col_map[bool_col]
                 
-                if fill_color:
-                    # Apply fill to the first column (Keyword) for better visibility
-                    worksheet.cell(row=row, column=1).fill = fill_color
-            
-            # Styling for Gaps (High gap = Red)
-            if gap_col_idx:
-                gap_val = worksheet.cell(row=row, column=gap_col_idx).value
-                # If gap is high (> 5.0), mark it red
-                if isinstance(gap_val, (int, float)) and gap_val > 5.0:
-                     worksheet.cell(row=row, column=gap_col_idx).fill = red_fill
+                for row in range(2, worksheet.max_row + 1):
+                    is_present = worksheet.cell(row=row, column=bool_idx).value
+                    
+                    fill_color = None
+                    if is_present is True:
+                        fill_color = green_fill
+                    elif is_present is False:
+                        fill_color = red_fill
+                    
+                    if fill_color:
+                        for t_idx in target_cols:
+                            worksheet.cell(row=row, column=t_idx).fill = fill_color
