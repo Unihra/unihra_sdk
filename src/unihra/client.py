@@ -365,7 +365,7 @@ class UnihraClient:
     def _style_worksheet(self, worksheet, df, sheet_type="generic"):
         """
         Internal method to apply professional styling:
-        1. Auto-width for columns (Compresses ID columns).
+        1. Auto-width for columns (Hides ID columns).
         2. Conditional formatting based on sheet type and values.
         3. Headers: Dark background for normal cols, No background for tech cols.
         """
@@ -376,8 +376,7 @@ class UnihraClient:
         header_font = Font(bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="363636", end_color="363636", fill_type="solid")
         
-        # Styles for technical columns (compressed)
-        # Black text so it's visible if expanded, but no background fill
+        # Styles for technical columns
         tech_header_font = Font(bold=True, color="000000") 
         
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
@@ -400,11 +399,11 @@ class UnihraClient:
                 
             cell.alignment = Alignment(horizontal='center')
 
-        # 2. Auto-width with compression for IDs
+        # 2. Auto-width with Hiding for IDs
         for idx, col in enumerate(df.columns):
             if col in tech_cols:
-                # Compress technical columns
-                worksheet.column_dimensions[get_column_letter(idx + 1)].width = 3
+                # Completely hide technical columns
+                worksheet.column_dimensions[get_column_letter(idx + 1)].hidden = True
                 continue
 
             # Calculate max length of content or header for normal columns
@@ -442,18 +441,19 @@ class UnihraClient:
         else:
             # For Word Analysis, N-Grams, and Vectors
             # Determine target columns based on sheet type
+            # EXCLUDING technical columns (id, block_id, analysis_id) from coloring
             target_cols = []
             if sheet_type == "word_analysis":
-                # Paint id, block_id, word, lemma
-                target_names = ["id", "block_id", "word", "lemma"]
+                # Paint word, lemma
+                target_names = ["word", "lemma"]
                 target_cols = [col_map[c] for c in target_names if c in col_map]
             elif sheet_type == "ngrams":
-                # Paint id, block_id, ngram
-                target_names = ["id", "block_id", "ngram"]
+                # Paint ngram
+                target_names = ["ngram"]
                 target_cols = [col_map[c] for c in target_names if c in col_map]
             elif sheet_type == "vectors":
-                # Paint id, analysis_id, word
-                target_names = ["id", "analysis_id", "word"]
+                # Paint word
+                target_names = ["word"]
                 target_cols = [col_map[c] for c in target_names if c in col_map]
 
             # Logic: Check bool 'present_on_own_page'
