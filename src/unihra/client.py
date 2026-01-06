@@ -27,40 +27,23 @@ ACTION_MAP = {
 class UnihraClient:
     """
     Official Python Client for Unihra API.
-    
-    Features:
-    - Automatic SSE stream handling.
-    - Response normalization (converts API keys to snake_case).
-    - Smart retries for network stability.
-    - Pandas and Excel export integration (Multi-sheet support).
-    - Visual progress bars for Jupyter/Console.
     """
 
     def __init__(self, api_key: str, base_url: str = BASE_URL, max_retries: int = 0):
-        """
-        Initialize the client.
-
-        :param api_key: Your API key.
-        :param base_url: Base URL for the API.
-        :param max_retries: Number of retries for failed requests (429/50x). 
-                            Default is 0 (fail fast). Set to 3-5 for production.
-        """
         self.base_url = base_url.rstrip('/')
         self.api_v1 = f"{self.base_url}/api/v1"
         self.session = requests.Session()
         
-        # Standard headers
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "UnihraPythonSDK/1.3.0"
+            "User-Agent": "UnihraPythonSDK/1.6.0"
         })
 
-        # Configure Smart Retries (Exponential Backoff)
         if max_retries > 0:
             retry_strategy = Retry(
                 total=max_retries,
-                backoff_factor=2,  # Wait 2s, 4s, 8s...
+                backoff_factor=2,
                 status_forcelist=[429, 500, 502, 503, 504],
                 allowed_methods=["POST", "GET"]
             )
@@ -69,13 +52,28 @@ class UnihraClient:
             self.session.mount("http://", adapter)
 
     def health(self) -> Dict[str, Any]:
-        """Check API service availability."""
         try:
             resp = self.session.get(f"{self.api_v1}/health")
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.RequestException as e:
             raise UnihraConnectionError(f"Health check failed: {e}")
+
+    def get_page_structure(self, task_id: str) -> List[Dict[str, Any]]:
+        """
+        Fetch detailed page structure list (Own Page + Competitors).
+        """
+        try:
+            resp = self.session.get(f"{self.api_v1}/report/structure/{task_id}")
+            resp.raise_for_status()
+            data = resp.json()
+            
+            # API returns a List of objects. Normalize each one.
+            if isinstance(data, list):
+                return [self._normalize_keys(item) for item in data]
+            return []
+        except requests.exceptions.RequestException as e:
+            return []
 
     def analyze(
         self, 
@@ -85,24 +83,10 @@ class UnihraClient:
         lang: Literal['ru', 'en'] = 'ru',
         verbose: bool = False
     ) -> Dict[str, Any]:
-        """
-        Run a full SEO analysis (Synchronous).
-        Blocks execution until the task is complete.
-
-        :param own_page: URL of the target page.
-        :param competitors: List of competitor URLs.
-        :param queries: List of target search queries for context analysis.
-        :param lang: Language code ('ru' or 'en').
-        :param verbose: If True, displays a progress bar (requires 'tqdm').
-        :return: Dictionary containing the analysis result with normalized keys.
-        """
         last_event = {}
-        
-        # Setup Progress Bar
         pbar = None
         if verbose:
             if TQDM_AVAILABLE:
-                # 0 to 100%
                 pbar = tqdm(total=100, desc="Analyzing SEO", unit="%")
             else:
                 print("Note: Install 'tqdm' to see a visual progress bar.")
@@ -111,7 +95,6 @@ class UnihraClient:
             for event in self.analyze_stream(own_page, competitors, queries, lang):
                 last_event = event
                 
-                # Update Progress Bar
                 if pbar:
                     state = event.get("state")
                     progress = event.get("progress", 0)
@@ -122,10 +105,9 @@ class UnihraClient:
                     
                     if state == "PROCESSING" or state == "PROGRESS":
                         msg = "Processing"
-                        # Try to get detailed message
                         details = event.get("details", {})
                         if isinstance(details, dict) and "message" in details:
-                            msg = details["message"][:40] # Truncate for display
+                            msg = details["message"][:40]
                         pbar.set_description(f"{msg}")
                     elif state == "SUCCESS":
                         pbar.set_description("Completed ✅")
@@ -153,13 +135,6 @@ class UnihraClient:
         queries: Optional[List[str]] = None,
         lang: str = 'ru'
     ) -> Generator[Dict, None, None]:
-        """
-        Generator method for real-time updates.
-        Yields SSE events as dictionaries.
-        
-        Automatically normalizes API keys (e.g. 'Block Comparison' -> 'block_comparison').
-        """
-        # 1. Validation
         if not competitors:
             raise UnihraValidationError("Competitor list cannot be empty.")
 
@@ -171,7 +146,6 @@ class UnihraClient:
         }
 
         try:
-            # 2. Create Task
             resp = self.session.post(f"{self.api_v1}/process", json=payload)
             
             if resp.status_code == 401:
@@ -182,7 +156,6 @@ class UnihraClient:
             if not task_id:
                 raise UnihraApiError("API response missing 'task_id'")
 
-            # 3. Stream Results
             stream_url = f"{self.api_v1}/process/status/{task_id}"
             
             with self.session.get(stream_url, stream=True) as s_resp:
@@ -194,20 +167,16 @@ class UnihraClient:
                     
                     if line.startswith(b'data: '):
                         try:
-                            # Decode SSE JSON
                             decoded_line = line[6:].decode('utf-8')
                             data = json.loads(decoded_line)
                             state = data.get("state")
                             
-                            # --- ERROR HANDLING ---
                             if state == "FAILURE":
-                                # Handle nested error object: {"error": {"code": 1003}}
                                 error_obj = data.get("error")
                                 if isinstance(error_obj, dict):
                                     code = error_obj.get("code", 9999)
                                     msg = error_obj.get("message", "Unknown error")
                                 else:
-                                    # Handle flat structure
                                     code = data.get("error_code", 9999)
                                     msg = data.get("message", "Unknown error")
 
@@ -220,6 +189,11 @@ class UnihraClient:
                                     final_result = self._translate_action_values(normalized_result)
                                 else:
                                     final_result = normalized_result
+
+                                # Fetch list of structures
+                                structure_data = self.get_page_structure(task_id)
+                                if structure_data:
+                                    final_result['page_structure'] = structure_data
 
                                 data["result"] = final_result
                                 yield data
@@ -236,48 +210,66 @@ class UnihraClient:
             raise UnihraConnectionError(f"Network error: {e}")
 
     def _normalize_keys(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Helper to convert API keys to Pythonic snake_case.
-        Example: 'Block Comparison' -> 'block_comparison'
-        """
         new_data = {}
+        if not isinstance(data, dict):
+            return data
+            
         for key, value in data.items():
             new_key = key.lower().replace(" ", "_").replace("-", "_")
             new_data[new_key] = value
         return new_data
 
     def _translate_action_values(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Translates 'action_needed' values from Russian to English."""
         if "block_comparison" in result and isinstance(result["block_comparison"], list):
             for item in result["block_comparison"]:
                 if "action_needed" in item:
                     russian_action = item["action_needed"]
-                    # Use .get() to safely handle unknown values from API
                     item["action_needed"] = ACTION_MAP.get(russian_action, russian_action)
         return result
 
+    def _flatten_structure_list(self, structure_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Flatten list of structures for DataFrame (Table view).
+        """
+        flat_rows = []
+        for item in structure_list:
+            flat_item = {'url': item.get('url')}
+            
+            # Metrics
+            if 'metrics' in item:
+                for k, v in item['metrics'].items():
+                    flat_item[k] = v
+            # Content
+            if 'content' in item:
+                for k, v in item['content'].items():
+                    flat_item[k] = v
+            # Meta Tags
+            if 'meta_tags' in item:
+                for k, v in item['meta_tags'].items():
+                    flat_item[k] = v
+            
+            flat_rows.append(flat_item)
+        return flat_rows
+
     def get_dataframe(self, result: Dict[str, Any], section: str = "block_comparison") -> pd.DataFrame:
-        """
-        Convert a specific result section to a Pandas DataFrame.
-        
-        :param result: The dictionary returned by .analyze()
-        :param section: 'block_comparison', 'ngrams_analysis', etc.
-        :return: pandas.DataFrame
-        """
         try:
             import pandas as pd
         except ImportError:
             raise UnihraDependencyError("Pandas is not installed. Run: pip install pandas")
 
-        # Normalize section name just in case user passes "Block Comparison"
         normalized_section = section.lower().replace(" ", "_").replace("-", "_")
+        
+        if normalized_section == "page_structure":
+            data = result.get("page_structure", [])
+            if not data:
+                return pd.DataFrame()
+            flat_list = self._flatten_structure_list(data)
+            return pd.DataFrame(flat_list)
+
         data = result.get(normalized_section, [])
         return pd.DataFrame(data)
 
     def _reorder_tech_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Moves technical ID columns to the end of the DataFrame.
-        """
         tech_cols = ['id', 'block_id', 'analysis_id']
         existing_tech = [c for c in df.columns if c in tech_cols]
         main_cols = [c for c in df.columns if c not in tech_cols]
@@ -288,10 +280,6 @@ class UnihraClient:
         return df[main_cols + existing_tech]
 
     def save_report(self, result: Dict[str, Any], filename: str = "report.xlsx", style_output: bool = True):
-        """
-        Save the full analysis result to a file.
-        Includes Semantic Gaps, Block Comparison, N-Grams, and DrMaxs.
-        """
         try:
             import pandas as pd
         except ImportError:
@@ -299,19 +287,17 @@ class UnihraClient:
 
         df_blocks = pd.DataFrame(result.get("block_comparison", []))
         
-        # Handle N-grams normalization
         ngrams_data = result.get("ngrams_analysis") or result.get("n_grams_analysis") or []
         df_ngrams = pd.DataFrame(ngrams_data)
         
-        # New Semantic Context (Gaps) Data
-        # Can be either 'semantic_context_analysis' or legacy 'semantic_context_gaps'
         gaps_data = result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or []
         df_gaps = pd.DataFrame(gaps_data)
         
         drmaxs_data = result.get("drmaxs", {})
+        
+        structure_data = result.get("page_structure", [])
 
         if filename.endswith(".csv"):
-            # CSV export is limited to the main block comparison for simplicity
             if not df_blocks.empty:
                 df_blocks = self._reorder_tech_columns(df_blocks)
             df_blocks.to_csv(filename, index=False, encoding='utf-8-sig')
@@ -322,10 +308,24 @@ class UnihraClient:
                 raise UnihraDependencyError("Library 'openpyxl' is required for Excel export.")
 
             with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-                # 1. Semantic Gaps (High Priority)
+                # 0. Page Structure
+                if structure_data:
+                    sheet = "Page Structure"
+                    flat_struct = self._flatten_structure_list(structure_data)
+                    df_struct = pd.DataFrame(flat_struct)
+                    
+                    # Reorder: URL first
+                    cols = df_struct.columns.tolist()
+                    if 'url' in cols:
+                        cols.insert(0, cols.pop(cols.index('url')))
+                        df_struct = df_struct[cols]
+
+                    df_struct.to_excel(writer, sheet_name=sheet, index=False)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_struct, sheet_type="structure")
+
+                # 1. Semantic Gaps
                 if not df_gaps.empty:
                     sheet = "Semantic Gaps"
-                    # Define desired order but keep IDs at the end if they exist
                     desired_cols = ['lemma', 'recommendation', 'context_snippet', 'gap', 'coverage_percent', 'competitor_avg_score', 'own_score']
                     existing_cols = [c for c in desired_cols if c in df_gaps.columns]
                     other_cols = [c for c in df_gaps.columns if c not in desired_cols]
@@ -350,7 +350,7 @@ class UnihraClient:
                     df_ngrams_ordered.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_ngrams_ordered, sheet_type="ngrams")
                 
-                # 4. DrMaxs Vectors
+                # 4. Vectors
                 if drmaxs_data and isinstance(drmaxs_data, dict):
                     for subkey, subdata in drmaxs_data.items():
                         if subdata and isinstance(subdata, list):
@@ -358,25 +358,16 @@ class UnihraClient:
                             df_dr_ordered = self._reorder_tech_columns(df_dr)
                             
                             safe_name = subkey.replace("_", " ").title().replace("By", "")
-                            sheet_name = f"Vectors {safe_name}"[:31] # Excel limit is 31 chars
+                            sheet_name = f"Vectors {safe_name}"[:31]
                             df_dr_ordered.to_excel(writer, sheet_name=sheet_name, index=False)
                             if style_output: self._style_worksheet(writer.sheets[sheet_name], df_dr_ordered, sheet_type="vectors")
 
     def _style_worksheet(self, worksheet, df, sheet_type="generic"):
-        """
-        Internal method to apply professional styling:
-        1. Auto-width for columns (Hides ID columns).
-        2. Conditional formatting based on sheet type and values.
-        3. Headers: Dark background for normal cols, No background for tech cols.
-        """
         from openpyxl.utils import get_column_letter
         from openpyxl.styles import PatternFill, Font, Alignment
 
-        # Styles for normal columns
         header_font = Font(bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="363636", end_color="363636", fill_type="solid")
-        
-        # Styles for technical columns
         tech_header_font = Font(bold=True, color="000000") 
         
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
@@ -384,96 +375,73 @@ class UnihraClient:
         
         tech_cols = ['id', 'block_id', 'analysis_id']
 
-        # 1. Format Headers
+        # Format Headers
         for cell in worksheet[1]:
             col_name = str(cell.value) if cell.value else ""
-            
             if col_name in tech_cols:
-                # Tech column: No background fill, black text
                 cell.font = tech_header_font
                 cell.fill = PatternFill(fill_type=None)
             else:
-                # Normal column: Dark background, white text
                 cell.font = header_font
                 cell.fill = header_fill
-                
-            cell.alignment = Alignment(horizontal='center')
+            cell.alignment = Alignment(horizontal='center', vertical='center')
 
-        # 2. Auto-width with Hiding for IDs
+        # Auto-width
         for idx, col in enumerate(df.columns):
             if col in tech_cols:
-                # Completely hide technical columns
                 worksheet.column_dimensions[get_column_letter(idx + 1)].hidden = True
                 continue
-
-            # Calculate max length of content or header for normal columns
-            max_len = max(
-                [len(str(s)) for s in df[col].astype(str).values] + [len(col)]
-            )
-            # Cap width
-            final_width = min(max_len + 2, 60) 
+            max_len = max([len(str(s)) for s in df[col].astype(str).values] + [len(col)])
+            final_width = min(max_len + 2, 70) 
             worksheet.column_dimensions[get_column_letter(idx + 1)].width = final_width
 
-        # 3. Conditional Formatting
-        
-        # Helper to map dataframe column names to Excel column indices (1-based)
         col_map = {name: i + 1 for i, name in enumerate(df.columns)}
 
-        if sheet_type == "gaps":
-            # In Gaps list: if own_score = 0, color 'lemma' cells. 
+        if sheet_type == "structure":
+            # Wrap text for content fields
+            for col_name in ['url', 'h1_heading', 'meta_title', 'meta_description', 'heading_structure_raw']:
+                if col_name in col_map:
+                    idx = col_map[col_name]
+                    for row in range(2, worksheet.max_row + 1):
+                        worksheet.cell(row=row, column=idx).alignment = Alignment(wrap_text=True)
+
+        elif sheet_type == "gaps":
             if 'own_score' in col_map and 'lemma' in col_map:
                 score_idx = col_map['own_score']
                 lemma_idx = col_map['lemma']
-                
                 for row in range(2, worksheet.max_row + 1):
                     score_val = worksheet.cell(row=row, column=score_idx).value
-                    # Check if score is effectively 0
                     try:
                         is_missing = float(score_val) == 0 if score_val is not None else True
                     except (ValueError, TypeError):
                         is_missing = True
-                    
                     if is_missing:
                         worksheet.cell(row=row, column=lemma_idx).fill = red_fill
                     else:
                         worksheet.cell(row=row, column=lemma_idx).fill = green_fill
 
         else:
-            # For Word Analysis, N-Grams, and Vectors
-            # Determine target columns based on sheet type
-            # EXCLUDING technical columns (id, block_id, analysis_id) from coloring
+            # Word Analysis, Vectors, etc.
             target_cols = []
             if sheet_type == "word_analysis":
-                # Paint word, lemma
                 target_names = ["word", "lemma"]
                 target_cols = [col_map[c] for c in target_names if c in col_map]
             elif sheet_type == "ngrams":
-                # Paint ngram
                 target_names = ["ngram"]
                 target_cols = [col_map[c] for c in target_names if c in col_map]
             elif sheet_type == "vectors":
-                # Paint word
                 target_names = ["word"]
                 target_cols = [col_map[c] for c in target_names if c in col_map]
 
-            # Logic: Check bool 'present_on_own_page'
             bool_col = 'present_on_own_page'
-            # Fallback for vectors if column name differs but logic implies existence check
             if bool_col not in col_map and 'present_in_own' in col_map:
                  bool_col = 'present_in_own'
 
             if bool_col in col_map and target_cols:
                 bool_idx = col_map[bool_col]
-                
                 for row in range(2, worksheet.max_row + 1):
                     is_present = worksheet.cell(row=row, column=bool_idx).value
-                    
-                    fill_color = None
-                    if is_present is True:
-                        fill_color = green_fill
-                    elif is_present is False:
-                        fill_color = red_fill
-                    
+                    fill_color = green_fill if is_present is True else red_fill if is_present is False else None
                     if fill_color:
                         for t_idx in target_cols:
                             worksheet.cell(row=row, column=t_idx).fill = fill_color

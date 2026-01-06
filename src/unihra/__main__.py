@@ -38,6 +38,7 @@ def main():
             if args.query:
                 print(f"🔎 Context Queries: {args.query}")
         
+        # Analyze will now automatically fetch Page Structure upon success
         result = client.analyze(
             own_page=args.own, 
             competitors=args.comp, 
@@ -47,7 +48,9 @@ def main():
         )
         
         if args.verbose:
-            print("\n✅ Done!")
+            print("\n✅ Analysis complete!")
+            if 'page_structure' in result:
+                print("📋 Page Structure data extracted successfully.")
 
         # Output logic
         if args.save:

@@ -29,6 +29,7 @@
 ### ✨ Key Features
 
 *   **🧠 Semantic Context Analysis**: Goes beyond simple keyword frequency. It analyzes HTML zones (`H1`, `Title`, `Strong`) and the distance of terms to your target query to provide "Add to Title/H1" recommendations.
+*   **🏗️ Page Structure Analysis**: Automatically extracts and compares H1-H6 headers, Meta Tags, and Technical uniqueness metrics for **all** analyzed pages (Own + Competitors).
 *   **⚡️ SSE Streaming Abstraction**: Automatically handles server-sent events, queue polling, and connection stability.
 *   **🐼 Pandas & Excel Ready**: Export multi-sheet reports (`.xlsx`) with conditional formatting in one line of code.
 *   **🛡️ Smart Retries**: Built-in exponential backoff strategy for network resilience.
@@ -69,11 +70,18 @@ result = client.analyze(
 
 # Access the data
 gaps = result.get('semantic_context_analysis', [])
+structures = result.get('page_structure', [])
+
 print(f"Found {len(gaps)} semantic gaps.")
+
+# Print titles of all analyzed pages
+for page in structures:
+    print(f"URL: {page['url']}")
+    print(f"Title: {page['meta_tags']['title']}\n")
 ```
 
 #### 2. Export to Excel
-Generate a professional SEO report with multiple sheets: *Semantic Gaps*, *Word Analysis*, *N-Grams*, and *Vectors*.
+Generate a professional SEO report with multiple sheets: *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N-Grams*, and *Vectors*.
 
 ```python
 client.save_report(result, "seo_report.xlsx")
@@ -84,7 +92,19 @@ client.save_report(result, "seo_report.xlsx")
 The SDK returns a Python dictionary mirroring the API response. Here is a breakdown of each logic block:
 
 <details>
-<summary><b>1. Semantic Context Analysis (Zone Analysis)</b></summary>
+<summary><b>1. Page Structure (New!)</b></summary>
+
+Returns a **List** of objects (for your page and all competitors). Each object contains:
+
+*   `url`: Page URL.
+*   `meta_tags`: Dictionary with `title`, `description`, etc.
+*   `content`: Dictionary with `h1_heading`, `heading_structure_raw` (all headers).
+*   `metrics`: Dictionary with `char_count_no_spaces`, `uniqueness_percentage`.
+
+</details>
+
+<details>
+<summary><b>2. Semantic Context Analysis (Zone Analysis)</b></summary>
 
 **This is the most critical part of the analysis.** It calculates a weighted score based on *where* a word appears (Title > H1 > H2 > Text) and *how close* it is to the target query.
 
@@ -110,7 +130,7 @@ The SDK returns a Python dictionary mirroring the API response. Here is a breakd
 </details>
 
 <details>
-<summary><b>2. Block Comparison (Lexical Analysis)</b></summary>
+<summary><b>3. Block Comparison (Lexical Analysis)</b></summary>
 
 Classical TF-IDF comparison. Useful for finding over-optimization (spam) or general content relevancy.
 
@@ -131,7 +151,7 @@ Classical TF-IDF comparison. Useful for finding over-optimization (spam) or gene
 </details>
 
 <details>
-<summary><b>3. N-grams Analysis (Phrases)</b></summary>
+<summary><b>4. N-grams Analysis (Phrases)</b></summary>
 
 Analyzes stable word combinations (Bigrams and Trigrams).
 
@@ -141,7 +161,7 @@ Analyzes stable word combinations (Bigrams and Trigrams).
 </details>
 
 <details>
-<summary><b>4. DrMaxs (Vector AI)</b></summary>
+<summary><b>5. DrMaxs (Vector AI)</b></summary>
 
 Uses Neural Network Embeddings to find **Latent Semantic Indexing (LSI)** words. These are words that are semantically close to your topic but might not be direct synonyms.
 
@@ -181,6 +201,7 @@ python -m unihra \
 ### ✨ Возможности
 
 *   **🧠 Семантический анализ контекста**: Алгоритм анализирует не просто частоту слов, а их вес в зонах документа (`H1`, `Title`, `Strong`) и расстояние до ключевого запроса.
+*   **🏗️ Анализ структуры страницы**: Автоматически извлекает и сравнивает заголовки H1-H6, Meta-теги и техническую уникальность контента по **всем** анализируемым страницам.
 *   **⚡️ Полная абстракция API**: Библиотека берет на себя работу с очередями, SSE-стримингом и обработкой ошибок.
 *   **🐼 Интеграция с Pandas**: Экспорт сложных данных в DataFrame или красивый Excel отчет одной строкой.
 *   **🛡️ Smart Retries**: Автоматическая обработка лимитов (`429`) и разрывов соединения.
@@ -216,10 +237,18 @@ result = client.analyze(
 )
 
 print("Анализ завершен!")
+
+# Получаем список структур (Своя страница + Конкуренты)
+structures = result.get('page_structure', [])
+
+if structures:
+    my_page = structures[0]
+    print(f"Мой H1: {my_page['content']['h1_heading']}")
+    print(f"Уникальность: {my_page['metrics']['uniqueness_percentage']}%")
 ```
 
 #### 2. Экспорт отчета
-Создает `.xlsx` файл с вкладками: *Semantic Gaps*, *Word Analysis*, *N-Grams*, *Vectors*.
+Создает `.xlsx` файл с вкладками: *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N-Grams*, *Vectors*.
 
 ```python
 client.save_report(result, "seo_audit.xlsx")
@@ -227,10 +256,22 @@ client.save_report(result, "seo_audit.xlsx")
 
 ### 📊 Структура данных и Внутрянка
 
-Результат анализа разделен на 4 логических блока.
+Результат анализа разделен на 5 логических блоков.
 
 <details>
-<summary><b>1. Semantic Context Analysis (Зональный анализ и Разрывы)</b></summary>
+<summary><b>1. Page Structure (Структура страницы)</b></summary>
+
+Возвращает **список** объектов. Каждый объект содержит:
+
+*   `url`: Ссылка на страницу.
+*   `content`: Заголовки H1-H6 (`h1_heading`, `heading_structure_raw`).
+*   `meta_tags`: Мета-теги (`title`, `description`).
+*   `metrics`: Технические метрики (`uniqueness_percentage`, `char_count_no_spaces`).
+
+</details>
+
+<details>
+<summary><b>2. Semantic Context Analysis (Зональный анализ и Разрывы)</b></summary>
 
 **Самый важный блок.** Алгоритм взвешивает слова. Слово в `Title` получает больше баллов, чем слово в футере. Также учитывается расстояние слова до вашего `query`.
 
@@ -256,7 +297,7 @@ client.save_report(result, "seo_audit.xlsx")
 </details>
 
 <details>
-<summary><b>2. Block Comparison (Лексика)</b></summary>
+<summary><b>3. Block Comparison (Лексика)</b></summary>
 
 Классическое сравнение TF-IDF и "мешка слов". Помогает найти переспам или недоспам общей лексики.
 
@@ -267,7 +308,7 @@ client.save_report(result, "seo_audit.xlsx")
 </details>
 
 <details>
-<summary><b>3. N-grams Analysis (Фразы)</b></summary>
+<summary><b>4. N-grams Analysis (Фразы)</b></summary>
 
 Показывает устойчивые словосочетания.
 
@@ -277,7 +318,7 @@ client.save_report(result, "seo_audit.xlsx")
 </details>
 
 <details>
-<summary><b>4. DrMaxs (Векторный AI)</b></summary>
+<summary><b>5. DrMaxs (Векторный AI)</b></summary>
 
 Использует нейросетевые эмбеддинги для поиска **LSI (Latent Semantic Indexing)**. Находит слова, которые **по смыслу** должны быть на странице, даже если конкуренты не используют их прямо, но используют их синонимы.
 
