@@ -12,7 +12,7 @@ __all__ = [
     "UnihraClient", 
     "UnihraError", 
     "UnihraApiError", 
-    "UnihraValidationError",
+    "UnihraValidationError", 
     "UnihraConnectionError",
     "ParserError",
     "CriticalOwnPageError"

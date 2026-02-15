@@ -30,6 +30,7 @@
 
 *   **🧠 Semantic Context Analysis**: Goes beyond simple keyword frequency. It analyzes HTML zones (`H1`, `Title`, `Strong`) and the distance of terms to your target query to provide "Add to Title/H1" recommendations.
 *   **🏗️ Page Structure Analysis**: Automatically extracts and compares H1-H6 headers, Meta Tags, and Technical uniqueness metrics for **all** analyzed pages (Own + Competitors).
+*   **🍪 Authorized Content Support**: Pass custom cookies to analyze pages behind login walls or age verification.
 *   **⚡️ SSE Streaming Abstraction**: Automatically handles server-sent events, queue polling, and connection stability.
 *   **🐼 Pandas & Excel Ready**: Export multi-sheet reports (`.xlsx`) with conditional formatting in one line of code.
 *   **🛡️ Smart Retries**: Built-in exponential backoff strategy for network resilience.
@@ -65,6 +66,10 @@ result = client.analyze(
     ],
     queries=["buy widget", "best widgets 2025"], # <--- Required for Structure Recommendations
     lang="en",
+    # Optional: Pass cookies for specific URLs (e.g. for staging or private content)
+    url_cookies={
+        "https://example.com/my-product": "session_id=abc123; auth=true"
+    },
     verbose=True # Shows interactive progress bar
 )
 
@@ -92,7 +97,7 @@ client.save_report(result, "seo_report.xlsx")
 The SDK returns a Python dictionary mirroring the API response. Here is a breakdown of each logic block:
 
 <details>
-<summary><b>1. Page Structure (New!)</b></summary>
+<summary><b>1. Page Structure</b></summary>
 
 Returns a **List** of objects (for your page and all competitors). Each object contains:
 
@@ -190,6 +195,7 @@ python -m unihra \
   --comp "https://comp1.com" \
   --comp "https://comp2.com" \
   --query "main keyword" \
+  --cookies "session=secret_123" \
   --save report.xlsx \
   --verbose
 ```
@@ -202,6 +208,7 @@ python -m unihra \
 
 *   **🧠 Семантический анализ контекста**: Алгоритм анализирует не просто частоту слов, а их вес в зонах документа (`H1`, `Title`, `Strong`) и расстояние до ключевого запроса.
 *   **🏗️ Анализ структуры страницы**: Автоматически извлекает и сравнивает заголовки H1-H6, Meta-теги и техническую уникальность контента по **всем** анализируемым страницам.
+*   **🍪 Работа с закрытым контентом**: Поддержка передачи Cookies для анализа страниц за логином или заглушкой.
 *   **⚡️ Полная абстракция API**: Библиотека берет на себя работу с очередями, SSE-стримингом и обработкой ошибок.
 *   **🐼 Интеграция с Pandas**: Экспорт сложных данных в DataFrame или красивый Excel отчет одной строкой.
 *   **🛡️ Smart Retries**: Автоматическая обработка лимитов (`429`) и разрывов соединения.
@@ -233,6 +240,10 @@ result = client.analyze(
     ],
     queries=["купить товар", "лучший товар 2025"], # <--- Важно для анализа зон
     lang="ru",
+    # Опционально: Куки для доступа к закрытым страницам
+    url_cookies={
+        "https://example.com/catalog/tovar": "PHPSESSID=12345; age_confirmed=yes"
+    },
     verbose=True # Включает прогресс-бар
 )
 
@@ -338,6 +349,7 @@ python -m unihra \
   --comp "https://comp1.ru/p1" \
   --comp "https://comp2.ru/p2" \
   --query "запрос 1" \
+  --cookies "PHPSESSID=12345" \
   --save audit.xlsx \
   --verbose
 ```

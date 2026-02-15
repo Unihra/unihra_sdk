@@ -15,7 +15,8 @@ def main():
     # Optional Context Query
     parser.add_argument("--query", action="append", help="Target search query for Context Analysis (repeatable)")
     
-    # Options
+    # New Options
+    parser.add_argument("--cookies", help="Auth cookies for Own Page (e.g. 'session=123; auth=abc')")
     parser.add_argument("--lang", default="ru", choices=["ru", "en"], help="Language")
     parser.add_argument("--save", help="Filename to save report (e.g. analysis.xlsx or .csv)")
     parser.add_argument("--retries", type=int, default=0, help="Max retries for connection stability")
@@ -32,11 +33,19 @@ def main():
 
     client = UnihraClient(api_key=api_key, max_retries=args.retries)
 
+    # Construct url_cookies if provided via CLI
+    # CLI allows setting cookies for Own Page primarily.
+    url_cookies = {}
+    if args.cookies:
+        url_cookies[args.own] = args.cookies
+
     try:
         if args.verbose:
             print(f"🚀 Starting analysis for {args.own}...")
             if args.query:
                 print(f"🔎 Context Queries: {args.query}")
+            if url_cookies:
+                print(f"🍪 Auth Cookies applied to Own Page.")
         
         # Analyze will now automatically fetch Page Structure upon success
         result = client.analyze(
@@ -44,6 +53,7 @@ def main():
             competitors=args.comp, 
             queries=args.query,
             lang=args.lang, 
+            url_cookies=url_cookies, # Passing cookies
             verbose=args.verbose
         )
         

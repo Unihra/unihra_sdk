@@ -4,6 +4,7 @@ import pandas as pd
 from typing import List, Generator, Dict, Any, Literal, Optional
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
 try:
     from tqdm.auto import tqdm
     TQDM_AVAILABLE = True
@@ -16,6 +17,7 @@ from .exceptions import (
 )
 
 BASE_URL = "https://unihra.ru"
+
 ACTION_MAP = {
     "Добавить": "add",
     "Увеличить": "increase",
@@ -37,7 +39,7 @@ class UnihraClient:
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "UnihraPythonSDK/1.6.0"
+            "User-Agent": "UnihraPythonSDK/1.3.0"
         })
 
         if max_retries > 0:
@@ -52,6 +54,7 @@ class UnihraClient:
             self.session.mount("http://", adapter)
 
     def health(self) -> Dict[str, Any]:
+        """Check API availability."""
         try:
             resp = self.session.get(f"{self.api_v1}/health")
             resp.raise_for_status()
@@ -72,7 +75,7 @@ class UnihraClient:
             if isinstance(data, list):
                 return [self._normalize_keys(item) for item in data]
             return []
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.RequestException:
             return []
 
     def analyze(
@@ -81,10 +84,22 @@ class UnihraClient:
         competitors: List[str],
         queries: Optional[List[str]] = None,
         lang: Literal['ru', 'en'] = 'ru',
+        url_cookies: Optional[Dict[str, str]] = None,
         verbose: bool = False
     ) -> Dict[str, Any]:
+        """
+        Start a full analysis task and wait for completion.
+        
+        :param own_page: URL of your landing page.
+        :param competitors: List of competitor URLs.
+        :param queries: List of target keywords.
+        :param lang: 'ru' or 'en'.
+        :param url_cookies: Dictionary mapping URL -> Cookie String.
+        :param verbose: If True, displays a progress bar.
+        """
         last_event = {}
         pbar = None
+        
         if verbose:
             if TQDM_AVAILABLE:
                 pbar = tqdm(total=100, desc="Analyzing SEO", unit="%")
@@ -92,7 +107,7 @@ class UnihraClient:
                 print("Note: Install 'tqdm' to see a visual progress bar.")
 
         try:
-            for event in self.analyze_stream(own_page, competitors, queries, lang):
+            for event in self.analyze_stream(own_page, competitors, queries, lang, url_cookies):
                 last_event = event
                 
                 if pbar:
@@ -103,7 +118,7 @@ class UnihraClient:
                         pbar.n = int(progress)
                         pbar.refresh()
                     
-                    if state == "PROCESSING" or state == "PROGRESS":
+                    if state in ["PROCESSING", "PROGRESS"]:
                         msg = "Processing"
                         details = event.get("details", {})
                         if isinstance(details, dict) and "message" in details:
@@ -133,7 +148,8 @@ class UnihraClient:
         own_page: str, 
         competitors: List[str],
         queries: Optional[List[str]] = None,
-        lang: str = 'ru'
+        lang: str = 'ru',
+        url_cookies: Optional[Dict[str, str]] = None
     ) -> Generator[Dict, None, None]:
         if not competitors:
             raise UnihraValidationError("Competitor list cannot be empty.")
@@ -142,7 +158,8 @@ class UnihraClient:
             "own_page": own_page, 
             "competitor_urls": competitors,
             "queries": queries or [],
-            "lang": lang
+            "lang": lang,
+            "url_cookies": url_cookies or {}
         }
 
         try:
@@ -185,6 +202,7 @@ class UnihraClient:
                             if state == "SUCCESS":
                                 raw_result = data.get("result", {})
                                 normalized_result = self._normalize_keys(raw_result)
+                                
                                 if lang == 'en':
                                     final_result = self._translate_action_values(normalized_result)
                                 else:
@@ -209,15 +227,15 @@ class UnihraClient:
         except requests.exceptions.RequestException as e:
             raise UnihraConnectionError(f"Network error: {e}")
 
-    def _normalize_keys(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        new_data = {}
-        if not isinstance(data, dict):
-            return data
-            
-        for key, value in data.items():
-            new_key = key.lower().replace(" ", "_").replace("-", "_")
-            new_data[new_key] = value
-        return new_data
+    def _normalize_keys(self, data: Any) -> Any:
+        if isinstance(data, dict):
+            return {
+                k.lower().replace(" ", "_").replace("-", "_"): self._normalize_keys(v) 
+                for k, v in data.items()
+            }
+        elif isinstance(data, list):
+            return [self._normalize_keys(i) for i in data]
+        return data
 
     def _translate_action_values(self, result: Dict[str, Any]) -> Dict[str, Any]:
         if "block_comparison" in result and isinstance(result["block_comparison"], list):
@@ -252,6 +270,9 @@ class UnihraClient:
         return flat_rows
 
     def get_dataframe(self, result: Dict[str, Any], section: str = "block_comparison") -> pd.DataFrame:
+        """
+        Convert a specific section of the result into a Pandas DataFrame.
+        """
         try:
             import pandas as pd
         except ImportError:
@@ -270,6 +291,9 @@ class UnihraClient:
         return pd.DataFrame(data)
 
     def _reorder_tech_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Moves technical IDs to the end of the DataFrame for better readability.
+        """
         tech_cols = ['id', 'block_id', 'analysis_id']
         existing_tech = [c for c in df.columns if c in tech_cols]
         main_cols = [c for c in df.columns if c not in tech_cols]
@@ -280,10 +304,14 @@ class UnihraClient:
         return df[main_cols + existing_tech]
 
     def save_report(self, result: Dict[str, Any], filename: str = "report.xlsx", style_output: bool = True):
+        """
+        Saves the analysis result to Excel or CSV.
+        Requires 'pandas' and 'openpyxl'.
+        """
         try:
             import pandas as pd
         except ImportError:
-            raise UnihraDependencyError("Pandas is required. Run: pip install pandas openpyxl")
+            raise UnihraDependencyError("Pandas is required. Run: pip install unihra[report]")
 
         df_blocks = pd.DataFrame(result.get("block_comparison", []))
         
