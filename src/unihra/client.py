@@ -1,6 +1,5 @@
 import json
 import requests
-import pandas as pd
 from typing import List, Generator, Dict, Any, Literal, Optional
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -226,7 +225,7 @@ class UnihraClient:
             raise UnihraConnectionError("Max retries exceeded. The service might be temporarily unavailable.")
         except requests.exceptions.RequestException as e:
             raise UnihraConnectionError(f"Network error: {e}")
-
+        
     def _normalize_keys(self, data: Any) -> Any:
         if isinstance(data, dict):
             return {
@@ -252,31 +251,21 @@ class UnihraClient:
         flat_rows = []
         for item in structure_list:
             flat_item = {'url': item.get('url')}
-            
-            # Metrics
-            if 'metrics' in item:
-                for k, v in item['metrics'].items():
-                    flat_item[k] = v
-            # Content
-            if 'content' in item:
-                for k, v in item['content'].items():
-                    flat_item[k] = v
-            # Meta Tags
-            if 'meta_tags' in item:
-                for k, v in item['meta_tags'].items():
-                    flat_item[k] = v
-            
+            for section in ['metrics', 'content', 'meta_tags']:
+                if section in item:
+                    for k, v in item[section].items():
+                        flat_item[k] = v
             flat_rows.append(flat_item)
         return flat_rows
 
-    def get_dataframe(self, result: Dict[str, Any], section: str = "block_comparison") -> pd.DataFrame:
+    def get_dataframe(self, result: Dict[str, Any], section: str = "block_comparison"):
         """
         Convert a specific section of the result into a Pandas DataFrame.
         """
         try:
             import pandas as pd
         except ImportError:
-            raise UnihraDependencyError("Pandas is not installed. Run: pip install pandas")
+            raise UnihraDependencyError("Pandas is not installed. Run: pip install unihra[full]")
 
         normalized_section = section.lower().replace(" ", "_").replace("-", "_")
         
@@ -289,19 +278,6 @@ class UnihraClient:
 
         data = result.get(normalized_section, [])
         return pd.DataFrame(data)
-
-    def _reorder_tech_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Moves technical IDs to the end of the DataFrame for better readability.
-        """
-        tech_cols = ['id', 'block_id', 'analysis_id']
-        existing_tech = [c for c in df.columns if c in tech_cols]
-        main_cols = [c for c in df.columns if c not in tech_cols]
-        
-        if not existing_tech:
-            return df
-            
-        return df[main_cols + existing_tech]
 
     def save_report(self, result: Dict[str, Any], filename: str = "report.xlsx", style_output: bool = True):
         """
@@ -389,6 +365,17 @@ class UnihraClient:
                             sheet_name = f"Vectors {safe_name}"[:31]
                             df_dr_ordered.to_excel(writer, sheet_name=sheet_name, index=False)
                             if style_output: self._style_worksheet(writer.sheets[sheet_name], df_dr_ordered, sheet_type="vectors")
+
+    def _reorder_tech_columns(self, df):
+        try:
+            import pandas as pd
+            if not isinstance(df, pd.DataFrame) or df.empty: return df
+            tech_cols = ['id', 'block_id', 'analysis_id']
+            existing_tech = [c for c in df.columns if c in tech_cols]
+            main_cols = [c for c in df.columns if c not in tech_cols]
+            return df[main_cols + existing_tech] if existing_tech else df
+        except ImportError:
+            return df
 
     def _style_worksheet(self, worksheet, df, sheet_type="generic"):
         from openpyxl.utils import get_column_letter
