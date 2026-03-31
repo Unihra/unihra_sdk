@@ -1,101 +1,134 @@
 # Unihra Python SDK
 
-Официальный клиент для [Unihra](https://unihra.ru): семантический и SEO-анализ страниц, сравнение с конкурентами, отчёты.  
-Англоязычная версия: [README.md](../README.md).
+<div align="center">
+
+[![PyPI version](https://img.shields.io/pypi/v/unihra.svg?style=flat-square&color=blue)](https://pypi.org/project/unihra/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/unihra.svg?style=flat-square)](https://pypi.org/project/unihra/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/Unihra/unihra_sdk/blob/main/LICENSE)
+
+**SEO и семантический анализ вашей страницы и конкурентов.**  
+Сравнение контента, поиск семантических пробелов и рекомендации по зонам страницы и векторной семантике.
+
+[English](../README.md) · Русский
 
 ---
 
-## ✨ Возможности
+### Ресурсы
 
-*   **🧠 Семантический анализ контекста**: Алгоритм анализирует не просто частоту слов, а их вес в зонах документа (`H1`, `Title`, `Strong`) и расстояние до ключевого запроса.
-*   **🏗️ Анализ структуры страницы**: Автоматически извлекает и сравнивает заголовки H1-H6, Meta-теги и техническую уникальность контента по **всем** анализируемым страницам.
-*   **🍪 Работа с закрытым контентом**: Поддержка передачи Cookies для анализа страниц за логином или заглушкой.
-*   **⚡️ Полная абстракция API**: Библиотека берет на себя работу с очередями, SSE-стримингом и обработкой ошибок.
-*   **🐼 Интеграция с Pandas**: Экспорт сложных данных в DataFrame или красивый Excel отчет одной строкой.
-*   **🛡️ Smart Retries**: Автоматическая обработка лимитов (`429`) и разрывов соединения.
-*   **🪐 Jupyter Support**: Красивые прогресс-бары при работе в ноутбуках.
+| | |
+| :---: | :--- |
+| **Продукт** | [unihra.ru](https://unihra.ru) — веб-интерфейс |
+| **Документация API** | [unihra.ru/docs](https://unihra.ru/docs) |
+| **Ключ API** | Telegram: [@UniHRA_bot](https://t.me/UniHRA_bot) |
+| **Новости** | [@mncosine](https://t.me/mncosine) |
 
-## 📦 Установка
+</div>
+
+---
+
+## Возможности
+
+- **Семантический контекст (зоны)** — вес слова зависит от того, где оно стоит (title, H1–H6, текст) и от расстояния до ваших целевых запросов; выдаются конкретные рекомендации (что добавить в title, заголовки и т.д.).
+- **Структура страницы** — заголовки, мета-теги и метрики контента для вашего URL и каждого URL конкурента.
+- **Сравнение слов (TF‑IDF)** — рекомендуемое действие по термину (добавить, усилить, снизить, ок).
+- **Фразы (n‑граммы)** — устойчивые формулировки на страницах конкурентов.
+- **Векторные / LSI термины (DrMaxs)** — семантически близкая лексика к теме.
+- **Cookies** — опционально строки cookie по URL для страниц за логином или ограничениями.
+- **Стриминг** — клиент сам обрабатывает поток событий анализа и ждёт завершения.
+- **Повторы запросов** — опциональные повторы HTTP с уступкой для нестабильной сети.
+- **Отчёты** — многостраничный Excel с оформлением (опциональные зависимости).
+- **Прогресс** — опциональный прогресс-бар в ноутбуках при установленном `tqdm`.
+
+---
+
+## Установка
 
 ```bash
 pip install unihra
 ```
 
-## ⚡️ Быстрый старт
+**Дополнительные наборы** (ставьте то, что нужно):
+
+| Команда | Состав |
+|--------|--------|
+| `pip install "unihra[report]"` | Экспорт в Excel (`pandas`, `openpyxl`) |
+| `pip install "unihra[full]"` | Отчёты + прогресс-бар (`tqdm`) |
+| `pip install "unihra[mcp]"` | MCP-сервер для Cursor / Claude Code (нужен **Python 3.10+**) |
+
+Либо установите пакеты вручную, например: `pip install pandas openpyxl tqdm`.
+
+---
+
+## Быстрый старт
 
 ### 1. Запуск анализа
 
-Для получения рекомендаций по структуре (H1-H6) обязательно передавайте параметр `queries` (целевые поисковые запросы, под которые оптимизируется страница).
+Передайте **`queries`** — поисковые намерения, под которые вы оптимизируетесь — тогда зональные рекомендации и анализ пробелов будут осмысленными.
 
 ```python
 from unihra import UnihraClient
 
-# Инициализация
-client = UnihraClient(api_key="ВАШ_КЛЮЧ")
+client = UnihraClient(api_key="ВАШ_API_КЛЮЧ", max_retries=3)
 
-# Запуск (синхронный режим)
 result = client.analyze(
     own_page="https://example.com/catalog/tovar",
     competitors=[
         "https://competitor.ru/item/1",
-        "https://market.ru/product/2"
+        "https://market.ru/product/2",
     ],
-    queries=["купить товар", "лучший товар 2025"],  # Важно для анализа зон
+    queries=["купить товар", "лучший товар 2025"],
     lang="ru",
-    # Опционально: Куки для доступа к закрытым страницам
     url_cookies={
-        "https://example.com/catalog/tovar": "PHPSESSID=12345; age_confirmed=yes"
+        "https://example.com/catalog/tovar": "PHPSESSID=12345; age_confirmed=yes",
     },
-    verbose=True  # Включает прогресс-бар
+    verbose=True,
 )
 
-print("Анализ завершен!")
+gaps = result.get("semantic_context_analysis", [])
+pages = result.get("page_structure", [])
 
-# Получаем список структур (Своя страница + Конкуренты)
-structures = result.get('page_structure', [])
-
-if structures:
-    my_page = structures[0]
-    print(f"Мой H1: {my_page['content']['h1_heading']}")
-    print(f"Уникальность: {my_page['metrics']['uniqueness_percentage']}%")
+print(f"Строк семантических пробелов: {len(gaps)}")
+for p in pages:
+    print(p["url"], "—", p["meta_tags"]["title"])
 ```
 
-### 2. Экспорт отчета
+### 2. Сохранение отчёта в Excel
 
-Создает `.xlsx` файл с вкладками: *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N-Grams*, *Vectors*.
+Обычно в книге есть листы вроде *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N‑Grams* и разделы по векторам.
 
 ```python
 client.save_report(result, "seo_audit.xlsx")
 ```
 
-## 📊 Структура данных и Внутрянка
+---
 
-Результат анализа разделен на 5 логических блоков.
+## Состав результата анализа
+
+SDK возвращает **словарь Python**, согласованный с API. Ключи приводятся к виду **snake_case**.
 
 <details>
-<summary><b>1. Page Structure (Структура страницы)</b></summary>
+<summary><b>1. Структура страницы (page structure)</b></summary>
 
-Возвращает **список** объектов. Каждый объект содержит:
+**Список** страниц (сначала ваша, затем конкуренты). В каждом элементе:
 
-*   `url`: Ссылка на страницу.
-*   `content`: Заголовки H1-H6 (`h1_heading`, `heading_structure_raw`).
-*   `meta_tags`: Мета-теги (`title`, `description`).
-*   `metrics`: Технические метрики (`uniqueness_percentage`, `char_count_no_spaces`).
+- `url`
+- `meta_tags` — `title`, `description` и др.
+- `content` — `h1_heading`, `heading_structure_raw` (иерархия заголовков текстом)
+- `metrics` — например `char_count_no_spaces`, `uniqueness_percentage`
 
 </details>
 
 <details>
-<summary><b>2. Semantic Context Analysis (Зональный анализ и Разрывы)</b></summary>
+<summary><b>2. Семантический контекст (semantic context analysis)</b></summary>
 
-**Самый важный блок.** Алгоритм взвешивает слова. Слово в `Title` получает больше баллов, чем слово в футере. Также учитывается расстояние слова до вашего `query`.
+Зональное сравнение лемм относительно ваших запросов:
 
-*   `lemma`: Лемма слова.
-*   `competitor_avg_score`: Средний взвешенный балл конкурентов.
-*   `own_score`: Ваш балл. Если `0.0`, значит слово отсутствует в важных зонах.
-*   `gap`: Величина отставания. Чем больше, тем важнее слово.
-*   `coverage_percent`: Процент конкурентов, у которых это слово есть в контексте.
-*   `context_snippet`: Пример использования (триграмма) из текстов конкурентов.
-*   `recommendation`: Конкретное ТЗ (например, *"Добавить в Title/H1"*, *"Добавить в H2/H3"* или *"Вписать в контекст"*).
+- `lemma` — начальная форма  
+- `competitor_avg_score`, `own_score` — взвешенные баллы (0.0 у вас часто значит «нет или слабая зона»)  
+- `gap` — отставание от конкурентов (чем больше, тем приоритетнее)  
+- `coverage_percent` — доля конкурентов, у которых термин в сильном контексте  
+- `context_snippet` — короткий пример с конкурентов  
+- `recommendation` — что сделать (например, добавить в Title/H1)
 
 ```json
 {
@@ -108,81 +141,111 @@ client.save_report(result, "seo_audit.xlsx")
   "recommendation": "Добавить в Title/H1"
 }
 ```
-</details>
-
-<details>
-<summary><b>3. Block Comparison (Лексика)</b></summary>
-
-Классическое сравнение TF-IDF и "мешка слов". Помогает найти переспам или недоспам общей лексики.
-
-*   `action_needed`: Рекомендация (`Добавить`, `Уменьшить`, `Ок`).
-*   `pct_target_comp_avg`: Средняя плотность (%) у конкурентов.
-*   `frequency_own_page`: Абсолютное число вхождений у вас.
 
 </details>
 
 <details>
-<summary><b>4. N-grams Analysis (Фразы)</b></summary>
+<summary><b>3. Сравнение блоков / лексика (block comparison)</b></summary>
 
-Показывает устойчивые словосочетания.
+Сравнение в духе TF‑IDF:
 
-*   `ngram`: Фраза (биграмма или триграмма).
-*   `pages_count`: На скольких сайтах конкурентов эта фраза встречается точь-в-точь.
+- `frequency`, `frequency_own_page`, `pct_target_comp_avg`
+- `action_needed` — после нормализации для русского языка в интерфейсе могут быть подписи вроде «Добавить», «Уменьшить», «Ок»; для английского — `add`, `increase`, `decrease`, `ok`
+
+```json
+{
+  "word": "цена",
+  "frequency": 12.5,
+  "pct_target_comp_avg": 2.5,
+  "action_needed": "increase",
+  "present_on_own_page": true
+}
+```
 
 </details>
 
 <details>
-<summary><b>5. DrMaxs (Векторный AI)</b></summary>
+<summary><b>4. N‑граммы</b></summary>
 
-Использует нейросетевые эмбеддинги для поиска **LSI (Latent Semantic Indexing)**. Находит слова, которые **по смыслу** должны быть на странице, даже если конкуренты не используют их прямо, но используют их синонимы.
+Устойчивые фразы (биграммы / триграммы) и на скольких страницах конкурентов они встречаются.
 
-*   `by_frequency`: Самые частотные вектора.
-*   `by_tfidf`: Самые "важные" вектора.
-*   `similarity_score`: Семантическая близость к тематике (0.0 - 1.0).
+- `ngram`, `pages_count` и др.
 
 </details>
 
-## 💻 Работа через CLI
+<details>
+<summary><b>5. DrMaxs (векторы / LSI)</b></summary>
+
+Семантические соседи темы, сгруппированные (например `by_frequency`, `by_tfidf`), с `similarity_score` и признаком наличия слова на вашей странице.
+
+```json
+{
+  "word": "логистика",
+  "similarity_score": 0.89,
+  "present_on_own_page": false
+}
+```
+
+</details>
+
+---
+
+## Командная строка
 
 ```bash
-# Пример использования в терминале
 python -m unihra \
-  --key "ВАШ_КЛЮЧ" \
+  --key "ВАШ_API_КЛЮЧ" \
   --own "https://site.ru/page" \
   --comp "https://comp1.ru/p1" \
   --comp "https://comp2.ru/p2" \
-  --query "запрос 1" \
+  --query "основной запрос" \
   --cookies "PHPSESSID=12345" \
   --save audit.xlsx \
   --verbose
 ```
 
-## 🤖 MCP-сервер (Model Context Protocol)
+| Параметр | Назначение |
+|----------|------------|
+| `--own` | URL вашей страницы (обязательно) |
+| `--comp` | URL конкурента (повторите для нескольких; нужен хотя бы один) |
+| `--query` | Целевой запрос (повторяемо; желательно указать) |
+| `--lang` | `ru` или `en` (по умолчанию `ru`) |
+| `--cookies` | Строка cookie для вашей страницы |
+| `--save` | Файл отчёта `.xlsx` или `.csv` |
+| `--retries` | Число повторов HTTP |
+| `--verbose` | Показать прогресс |
+| `--no-style` | Excel без дополнительного оформления |
 
-В SDK есть опциональный **MCP-сервер**: редакторы вроде **Cursor** или **Claude Code** могут вызывать анализ Unihra через [Model Context Protocol](https://modelcontextprotocol.io/). Под капотом используется тот же `UnihraClient`; без установки extra поведение обычного SDK не меняется.
+Параметр `--key` можно не указывать, если задана переменная окружения **`UNIHRA_API_KEY`**.  
+Без `--save` и без `--verbose` в консоль выводится JSON.
 
-**Требования:** Python **3.10+** и extra `mcp` (пакет `mcp` из PyPI подтягивается только на поддерживаемых версиях Python).
+---
 
-```bash
-pip install "unihra[mcp]"
-```
+## Cursor, Claude и другие MCP-клиенты
 
-**Запуск** (ключ через флаг или переменную `UNIHRA_API_KEY`):
+Опциональный **MCP-сервер** позволяет совместимым ассистентам вызывать Unihra как **инструменты**, а не скачивать страницы самостоятельно.
 
-```bash
-python -m unihra.mcp_server --key ВАШ_API_КЛЮЧ
-# или
-export UNIHRA_API_KEY=ВАШ_API_КЛЮЧ
-python -m unihra.mcp_server
-```
+1. Установка: `pip install "unihra[mcp]"` (нужен **Python 3.10+**).
+2. Ключ API: переменная **`UNIHRA_API_KEY`** или флаг `--key` при запуске сервера.
+3. Запуск: `python -m unihra.mcp_server` или команда `unihra-mcp`.
+4. В настройках MCP вашего клиента укажите этот интерпретатор Python и модуль (см. пример ниже).
 
-Также доступна консольная команда `unihra-mcp` (эквивалент `python -m unihra.mcp_server`).
+**Большие ответы:** инструмент `unihra_analyze` возвращает **отфильтрованные, компактные** данные (плюс краткое поле `_meta`), чтобы ответ помещался в типичные лимиты контекста у LLM. Полный объём «как в сыром API» доступен через **Python SDK** или **HTTP API** напрямую. При необходимости пороги можно менять через параметры фильтров, которые описаны у инструмента.
 
-**Доп. параметры:** `--retries` (число повторов HTTP, по умолчанию `3`), `--base-url` (базовый URL API, по умолчанию `https://unihra.ru`).
+**Инструменты (кратко)**
 
-**Инструменты (tools):** `unihra_health`, `unihra_analyze`, `unihra_analyze_stream_events`, `unihra_get_page_structure`, `unihra_extract_section`, `unihra_summarize_gaps`, `unihra_summarize_vectors`, `unihra_word_actions`.
+| Инструмент | Назначение |
+|------------|------------|
+| `unihra_health` | Проверка доступности сервиса |
+| `unihra_analyze` | Полный анализ с фильтрацией шума по умолчанию |
+| `unihra_analyze_stream_events` | Тот же запуск пошагово (SSE), например чтобы взять `task_id` |
+| `unihra_get_page_structure` | Отчёт по заголовкам/мета для завершённого `task_id` |
+| `unihra_get_gaps` | Перегруппировка семантических пробелов из уже полученного результата |
+| `unihra_get_vectors` | Векторные / LSI слова из уже полученного результата |
+| `unihra_get_word_actions` | Слова TF‑IDF по категориям действий |
+| `unihra_get_ngrams` | Фразы из уже полученного результата |
 
-**Пример конфигурации MCP** (в духе Cursor / Claude Code):
+**Пример конфигурации MCP** (подставьте свой путь к `python.exe`):
 
 ```json
 {
@@ -198,4 +261,14 @@ python -m unihra.mcp_server
 }
 ```
 
-Пример скрипта в репозитории: `examples/mcp_server_usage.py`.
+Дополнительно: в репозитории есть `examples/mcp_server_usage.py` — печатает пример конфигурации и показывает локальный запуск сервера.
+
+---
+
+<div align="center">
+
+**Команда Unihra**
+
+[Telegram — новости](https://t.me/mncosine) · [unihra.ru](https://unihra.ru) · [Ключ API — @UniHRA_bot](https://t.me/UniHRA_bot)
+
+</div>

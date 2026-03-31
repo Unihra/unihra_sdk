@@ -52,10 +52,42 @@ class FakeClient:
 
     def analyze(self, **kwargs):
         return {
-            "block_comparison": [{"word": "price", "action_needed": "Добавить"}],
-            "semantic_context_analysis": [{"lemma": "battery", "gap": 10.5, "own_score": 0.0}],
-            "drmaxs": {"by_frequency": [{"word": "logistics", "similarity_score": 0.89, "present_on_own_page": False}]},
+            "block_comparison": [
+                {
+                    "word": "price",
+                    "action_needed": "Добавить",
+                    "frequency": 3.0,
+                },
+                {
+                    "word": "stock",
+                    "action_needed": "Ок",
+                    "frequency": 3.0,
+                },
+            ],
+            "semantic_context_analysis": [
+                {
+                    "lemma": "battery",
+                    "gap": 10.5,
+                    "own_score": 0.0,
+                    "coverage_percent": 80.0,
+                    "recommendation": "Add to Title",
+                }
+            ],
+            "drmaxs": {
+                "by_frequency": [
+                    {"word": "logistics", "similarity_score": 0.89, "present_on_own_page": False}
+                ]
+            },
             "page_structure": [{"url": kwargs.get("own_page")}],
+            "ngrams_analysis": [
+                {
+                    "ngram": "fast delivery",
+                    "pages_count": 4,
+                    "frequency_avg": 2.0,
+                    "ngram_type": "bigrams",
+                    "present_on_own_page": True,
+                }
+            ],
         }
 
     def analyze_stream(self, **kwargs):
@@ -63,7 +95,7 @@ class FakeClient:
         yield {"state": "SUCCESS", "result": {"ok": True}}
 
     def get_page_structure(self, task_id):
-        return [{"url": "https://example.com", "task_id": task_id}]
+        return [{"url": "https://example.com", "metrics": {"char_count_no_spaces": 100}}]
 
 
 @pytest.fixture
@@ -123,7 +155,10 @@ def test_build_server_registers_tools(mcp_server_module):
 
     assert "unihra_health" in names
     assert "unihra_analyze" in names
-    assert "unihra_word_actions" in names
+    assert "unihra_get_word_actions" in names
+    assert "unihra_get_gaps" in names
+    assert "unihra_get_vectors" in names
+    assert "unihra_get_ngrams" in names
 
 
 def test_call_tool_health(mcp_server_module):
@@ -133,46 +168,83 @@ def test_call_tool_health(mcp_server_module):
     assert payload["status"] == "ok"
 
 
+def test_call_tool_analyze_returns_clean_meta(mcp_server_module):
+    server = mcp_server_module.build_server(FakeClient())
+    result = asyncio.run(
+        server._call_tool_handler(
+            "unihra_analyze",
+            {"own_page": "https://my.site", "competitors": ["https://comp.site"]},
+        )
+    )
+    payload = _tool_result_payload(result)
+    assert "_meta" in payload
+    assert payload["_meta"]["gaps_returned"] >= 1
+    assert "semantic_context_analysis" in payload
+
+
 def test_call_tool_analyze_stream_events(mcp_server_module):
     server = mcp_server_module.build_server(FakeClient())
-    result = asyncio.run(server._call_tool_handler(
-        "unihra_analyze_stream_events",
-        {"own_page": "https://my.site", "competitors": ["https://comp.site"]},
-    ))
+    result = asyncio.run(
+        server._call_tool_handler(
+            "unihra_analyze_stream_events",
+            {"own_page": "https://my.site", "competitors": ["https://comp.site"]},
+        )
+    )
     payload = _tool_result_payload(result)
 
     assert isinstance(payload, list)
     assert payload[-1]["state"] == "SUCCESS"
 
 
-def test_call_tool_word_actions_maps_russian_labels(mcp_server_module):
+def test_call_tool_get_word_actions_maps_russian_labels(mcp_server_module):
     server = mcp_server_module.build_server(FakeClient())
     analyze_result = {
         "block_comparison": [
-            {"word": "price", "action_needed": "Добавить"},
-            {"word": "stock", "action_needed": "Ок"},
+            {"word": "price", "action_needed": "Добавить", "frequency": 3.0},
+            {"word": "stock", "action_needed": "Ок", "frequency": 3.0},
         ]
     }
-    result = asyncio.run(server._call_tool_handler(
-        "unihra_word_actions",
-        {"result": analyze_result, "action": "all"},
-    ))
+    result = asyncio.run(
+        server._call_tool_handler(
+            "unihra_get_word_actions",
+            {"result": analyze_result, "action": "all"},
+        )
+    )
     payload = _tool_result_payload(result)
 
     assert payload["counts"]["add"] == 1
     assert payload["counts"]["ok"] == 1
 
 
-def test_call_tool_extract_section_alias(mcp_server_module):
+def test_call_tool_get_gaps(mcp_server_module):
     server = mcp_server_module.build_server(FakeClient())
     analyze_result = {
-        "semantic_context_gaps": [{"lemma": "battery", "gap": 10.5}]
+        "semantic_context_gaps": [
+            {
+                "lemma": "battery",
+                "gap": 10.5,
+                "coverage_percent": 80.0,
+                "recommendation": "Title",
+            }
+        ]
     }
-    result = asyncio.run(server._call_tool_handler(
-        "unihra_extract_section",
-        {"result": analyze_result, "section": "semantic_context_analysis"},
-    ))
+    result = asyncio.run(
+        server._call_tool_handler(
+            "unihra_get_gaps",
+            {"result": analyze_result, "top_n": 5},
+        )
+    )
     payload = _tool_result_payload(result)
 
-    assert "semantic_context_analysis" in payload
-    assert payload["semantic_context_analysis"][0]["lemma"] == "battery"
+    assert "groups" in payload
+    assert "Title" in payload["groups"]
+
+
+def test_call_tool_get_page_structure_strips_junk(mcp_server_module):
+    server = mcp_server_module.build_server(FakeClient())
+    result = asyncio.run(
+        server._call_tool_handler("unihra_get_page_structure", {"task_id": "t1"})
+    )
+    payload = _tool_result_payload(result)
+    assert isinstance(payload, list)
+    assert payload[0]["url"] == "https://example.com"

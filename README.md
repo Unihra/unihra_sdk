@@ -1,4 +1,4 @@
-# 🛠️ Unihra Python SDK
+# Unihra Python SDK
 
 <div align="center">
 
@@ -6,120 +6,129 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/unihra.svg?style=flat-square)](https://pypi.org/project/unihra/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/Unihra/unihra_sdk/blob/main/LICENSE)
 
-**Enterprise-grade SEO & Semantic Analysis SDK.**<br>
-*Compare content, find semantic gaps, and generate structure recommendations using Vector AI & Zone Analysis.*
+**SEO and semantic analysis for your pages and competitors.**  
+Compare content, surface semantic gaps, and get actionable recommendations using zone analysis and vector semantics.
 
-[🇬🇧 English](#-english-documentation) | [🇷🇺 Русский](docs/README.ru.md)
+English · [Русский](docs/README.ru.md)
 
 ---
 
-### 🚀 Ecosystem & Resources
+### Resources
 
-| **Web UI** | **API Docs** | **Get API Key** | **News Channel** |
-| :---: | :---: | :---: | :---: |
-| 🖥️ [**unihra.ru**](https://unihra.ru) | 📚 [**unihra.ru/docs**](https://unihra.ru/docs) | 🔑 [**@UniHRA_bot**](https://t.me/UniHRA_bot) | 📢 [**@mncosine**](https://t.me/mncosine) |
-| *Visual Sandbox* | *REST API Spec* | *Get Free Key Here* | *Updates & Tips* |
+| | |
+| :---: | :--- |
+| **Product** | [unihra.ru](https://unihra.ru) — web interface |
+| **API reference** | [unihra.ru/docs](https://unihra.ru/docs) |
+| **API key** | Telegram: [@UniHRA_bot](https://t.me/UniHRA_bot) |
+| **Updates** | [@mncosine](https://t.me/mncosine) |
 
 </div>
 
 ---
 
-## 🇬🇧 English Documentation
+## Features
 
-### ✨ Key Features
+- **Semantic context (zones)** — weights words by where they appear (title, H1–H6, body) and distance to your target queries, with concrete recommendations (for example, what to add to title or headings).
+- **Page structure** — headings, meta tags, and content metrics for your URL and each competitor URL.
+- **Word comparison (TF‑IDF)** — suggested actions per term (add, increase, decrease, ok).
+- **Phrases (n‑grams)** — recurring phrases across competitor pages.
+- **Vector / LSI terms (DrMaxs)** — semantically related vocabulary for the topic.
+- **Cookies** — optional per‑URL cookie strings for pages behind login or gates.
+- **Streaming** — the client handles the live analysis stream and waits for completion.
+- **Retries** — optional HTTP retries with backoff for unstable networks.
+- **Reports** — export multi‑sheet Excel reports with formatting (optional dependencies).
+- **Progress** — optional progress bar in notebooks when `tqdm` is installed.
 
-*   **🧠 Semantic Context Analysis**: Goes beyond simple keyword frequency. It analyzes HTML zones (`H1`, `Title`, `Strong`) and the distance of terms to your target query to provide "Add to Title/H1" recommendations.
-*   **🏗️ Page Structure Analysis**: Automatically extracts and compares H1-H6 headers, Meta Tags, and Technical uniqueness metrics for **all** analyzed pages (Own + Competitors).
-*   **🍪 Authorized Content Support**: Pass custom cookies to analyze pages behind login walls or age verification.
-*   **⚡️ SSE Streaming Abstraction**: Automatically handles server-sent events, queue polling, and connection stability.
-*   **🐼 Pandas & Excel Ready**: Export multi-sheet reports (`.xlsx`) with conditional formatting in one line of code.
-*   **🛡️ Smart Retries**: Built-in exponential backoff strategy for network resilience.
-*   **🪐 Jupyter Native**: Interactive HTML progress bars for Notebook environments.
+---
 
-### 📦 Installation
+## Installation
 
 ```bash
 pip install unihra
 ```
-*Optional: Install dependencies for Excel export and progress bars:*
-```bash
-pip install pandas openpyxl tqdm
-```
 
-### ⚡️ Quick Start
+**Optional bundles** (install what you need):
 
-#### 1. Full Analysis with Context
-To enable Zone Analysis and Gap detection, you must provide `queries` (the main keywords you want to rank for).
+| Command | Includes |
+|--------|----------|
+| `pip install "unihra[report]"` | Excel export (`pandas`, `openpyxl`) |
+| `pip install "unihra[full]"` | Report export + progress bar (`tqdm`) |
+| `pip install "unihra[mcp]"` | MCP server for Cursor / Claude Code (requires **Python 3.10+**) |
+
+Or install pieces manually, for example: `pip install pandas openpyxl tqdm`.
+
+---
+
+## Quick start
+
+### 1. Run an analysis
+
+Pass **`queries`** — the search intents you care about — so zone recommendations and gap analysis are meaningful.
 
 ```python
 from unihra import UnihraClient
 
-# Initialize client
 client = UnihraClient(api_key="YOUR_API_KEY", max_retries=3)
 
-# Run Analysis
 result = client.analyze(
     own_page="https://example.com/my-product",
     competitors=[
-        "https://competitor.com/top-product", 
-        "https://market-leader.com/item"
+        "https://competitor.com/top-product",
+        "https://market-leader.com/item",
     ],
-    queries=["buy widget", "best widgets 2025"], # <--- Required for Structure Recommendations
+    queries=["buy widget", "best widgets 2025"],
     lang="en",
-    # Optional: Pass cookies for specific URLs (e.g. for staging or private content)
     url_cookies={
-        "https://example.com/my-product": "session_id=abc123; auth=true"
+        "https://example.com/my-product": "session_id=abc123; auth=true",
     },
-    verbose=True # Shows interactive progress bar
+    verbose=True,
 )
 
-# Access the data
-gaps = result.get('semantic_context_analysis', [])
-structures = result.get('page_structure', [])
+gaps = result.get("semantic_context_analysis", [])
+pages = result.get("page_structure", [])
 
-print(f"Found {len(gaps)} semantic gaps.")
-
-# Print titles of all analyzed pages
-for page in structures:
-    print(f"URL: {page['url']}")
-    print(f"Title: {page['meta_tags']['title']}\n")
+print(f"Semantic gap rows: {len(gaps)}")
+for p in pages:
+    print(p["url"], "—", p["meta_tags"]["title"])
 ```
 
-#### 2. Export to Excel
-Generate a professional SEO report with multiple sheets: *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N-Grams*, and *Vectors*.
+### 2. Save an Excel report
+
+Sheet names typically include *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N‑Grams*, and vector sections.
 
 ```python
 client.save_report(result, "seo_report.xlsx")
 ```
 
-### 📊 Data Model & Internals
+---
 
-The SDK returns a Python dictionary mirroring the API response. Here is a breakdown of each logic block:
+## What’s in the result
+
+The SDK returns a **Python dictionary** aligned with the API. Keys are normalized to **snake_case**.
 
 <details>
-<summary><b>1. Page Structure</b></summary>
+<summary><b>1. Page structure</b></summary>
 
-Returns a **List** of objects (for your page and all competitors). Each object contains:
+A **list** of pages (yours first, then competitors). Each item includes:
 
-*   `url`: Page URL.
-*   `meta_tags`: Dictionary with `title`, `description`, etc.
-*   `content`: Dictionary with `h1_heading`, `heading_structure_raw` (all headers).
-*   `metrics`: Dictionary with `char_count_no_spaces`, `uniqueness_percentage`.
+- `url`
+- `meta_tags` — `title`, `description`, etc.
+- `content` — `h1_heading`, `heading_structure_raw` (heading outline as text)
+- `metrics` — e.g. `char_count_no_spaces`, `uniqueness_percentage`
 
 </details>
 
 <details>
-<summary><b>2. Semantic Context Analysis (Zone Analysis)</b></summary>
+<summary><b>2. Semantic context analysis</b></summary>
 
-**This is the most critical part of the analysis.** It calculates a weighted score based on *where* a word appears (Title > H1 > H2 > Text) and *how close* it is to the target query.
+Zone‑weighted comparison of lemmas vs your queries:
 
-*   `lemma`: The base form of the word.
-*   `competitor_avg_score`: The weighted score of this word across top competitors.
-*   `own_score`: Your weighted score. If `0.0`, the word is missing or used in a very weak zone (e.g., footer).
-*   `gap`: The difference between competitors and you. Higher gap = higher priority.
-*   `coverage_percent`: Percentage of competitors that use this word in a significant context.
-*   `context_snippet`: A 3-word phrase (trigram) showing how competitors use this word.
-*   `recommendation`: Actionable advice based on the gap (e.g., *"Add to Title/H1"*, *"Add to H2/H3"*, *"Mention in Body"*).
+- `lemma` — base form  
+- `competitor_avg_score`, `own_score` — weighted scores (0.0 on your side often means missing or weak placement)  
+- `gap` — how far behind competitors you are (higher = higher priority)  
+- `coverage_percent` — share of competitors using the term in a strong context  
+- `context_snippet` — short example from competitors  
+- `recommendation` — suggested action (e.g. add to title/H1)
 
 ```json
 {
@@ -129,20 +138,19 @@ Returns a **List** of objects (for your page and all competitors). Each object c
   "gap": 10.5,
   "coverage_percent": 80.0,
   "context_snippet": "long lasting battery life",
-  "recommendation": "Add to Title/H1" 
+  "recommendation": "Add to Title/H1"
 }
 ```
+
 </details>
 
 <details>
-<summary><b>3. Block Comparison (Lexical Analysis)</b></summary>
+<summary><b>3. Block comparison (lexical)</b></summary>
 
-Classical TF-IDF comparison. Useful for finding over-optimization (spam) or general content relevancy.
+TF‑IDF style comparison:
 
-*   `frequency`: Weighted frequency (TF).
-*   `frequency_own_page`: How many times it appears on your page.
-*   `pct_target_comp_avg`: Average density (%) on competitor pages.
-*   `action_needed`: Simple recommendation (`add`, `increase`, `decrease`, `ok`).
+- `frequency`, `frequency_own_page`, `pct_target_comp_avg`
+- `action_needed` — `add`, `increase`, `decrease`, `ok` (after normalization for English)
 
 ```json
 {
@@ -153,26 +161,22 @@ Classical TF-IDF comparison. Useful for finding over-optimization (spam) or gene
   "present_on_own_page": true
 }
 ```
-</details>
-
-<details>
-<summary><b>4. N-grams Analysis (Phrases)</b></summary>
-
-Analyzes stable word combinations (Bigrams and Trigrams).
-
-*   `ngram`: The phrase (e.g., "fast delivery").
-*   `pages_count`: On how many competitor sites this exact phrase appears.
 
 </details>
 
 <details>
-<summary><b>5. DrMaxs (Vector AI)</b></summary>
+<summary><b>4. N‑grams</b></summary>
 
-Uses Neural Network Embeddings to find **Latent Semantic Indexing (LSI)** words. These are words that are semantically close to your topic but might not be direct synonyms.
+Phrases (bigrams / trigrams) and how many competitor pages contain them.
 
-*   `by_frequency`: Most frequent semantically related words.
-*   `by_tfidf`: Most unique/important semantically related words.
-*   `similarity_score`: Cosine similarity to the topic vector (0.0 to 1.0).
+- `ngram`, `pages_count`, etc.
+
+</details>
+
+<details>
+<summary><b>5. DrMaxs (vector / LSI)</b></summary>
+
+Semantic neighbours of the topic, grouped (e.g. `by_frequency`, `by_tfidf`), with `similarity_score` and whether the word appears on your page.
 
 ```json
 {
@@ -181,16 +185,16 @@ Uses Neural Network Embeddings to find **Latent Semantic Indexing (LSI)** words.
   "present_on_own_page": false
 }
 ```
+
 </details>
 
-### 💻 CLI Usage
+---
 
-You can use the SDK directly from your terminal.
+## Command line
 
 ```bash
-# Run analysis and save to Excel
 python -m unihra \
-  --key "YOUR_KEY" \
+  --key "YOUR_API_KEY" \
   --own "https://mysite.com" \
   --comp "https://comp1.com" \
   --comp "https://comp2.com" \
@@ -200,32 +204,48 @@ python -m unihra \
   --verbose
 ```
 
-### 🤖 MCP Server (Model Context Protocol)
+| Option | Meaning |
+|--------|---------|
+| `--own` | Your page URL (required) |
+| `--comp` | Competitor URL (repeat for multiple; at least one required) |
+| `--query` | Target query (repeatable; recommended) |
+| `--lang` | `ru` or `en` (default `ru`) |
+| `--cookies` | Cookie string for your own page |
+| `--save` | Write `.xlsx` or `.csv` report |
+| `--retries` | HTTP retry count |
+| `--verbose` | Show progress |
+| `--no-style` | Plain Excel without extra styling |
 
-The SDK ships an optional **MCP server** so tools like **Cursor** or **Claude Code** can call Unihra analysis over the [Model Context Protocol](https://modelcontextprotocol.io/). It wraps the same `UnihraClient` as the rest of the package; core SDK usage is unchanged if you do not install the extra.
+You can omit `--key` if the environment variable **`UNIHRA_API_KEY`** is set.  
+Without `--save` and without `--verbose`, JSON is printed to the terminal.
 
-**Requirements:** Python **3.10+** and the `mcp` extra (the `mcp` PyPI package is only resolved on supported Python versions).
+---
 
-```bash
-pip install "unihra[mcp]"
-```
+## Cursor, Claude, and other MCP clients
 
-**Run** (API key via flag or `UNIHRA_API_KEY`):
+The optional **MCP server** lets compatible assistants call Unihra as **tools** instead of fetching pages themselves.
 
-```bash
-python -m unihra.mcp_server --key YOUR_API_KEY
-# or
-export UNIHRA_API_KEY=YOUR_API_KEY
-python -m unihra.mcp_server
-```
+1. Install: `pip install "unihra[mcp]"` (Python **3.10+**).
+2. Set your API key: environment variable **`UNIHRA_API_KEY`**, or pass `--key` when starting the server.
+3. Start: `python -m unihra.mcp_server` or the command `unihra-mcp`.
+4. Point your client’s MCP settings at that Python and module (see below).
 
-The package also exposes the console entry point `unihra-mcp` (same behavior as `python -m unihra.mcp_server`).
+**Large results:** the `unihra_analyze` tool returns **filtered, compact** data (plus a small `_meta` summary) so answers fit typical LLM context limits. For a full raw API‑size payload, use the Python SDK or API directly. You can adjust filter parameters exposed by the tool where needed.
 
-**Optional flags:** `--retries` (HTTP retries, default `3`), `--base-url` (override API base URL, default `https://unihra.ru`).
+**Available tools (summary)**
 
-**Tools:** `unihra_health`, `unihra_analyze`, `unihra_analyze_stream_events`, `unihra_get_page_structure`, `unihra_extract_section`, `unihra_summarize_gaps`, `unihra_summarize_vectors`, `unihra_word_actions`.
+| Tool | Purpose |
+|------|---------|
+| `unihra_health` | Check that the service is reachable |
+| `unihra_analyze` | Full analysis with default noise filtering |
+| `unihra_analyze_stream_events` | Same run as step‑by‑step stream events (e.g. to read `task_id`) |
+| `unihra_get_page_structure` | Fetch heading/meta report for a finished `task_id` |
+| `unihra_get_gaps` | Re‑group semantic gaps from an existing result |
+| `unihra_get_vectors` | LSI / vector terms from an existing result |
+| `unihra_get_word_actions` | TF‑IDF words grouped by action |
+| `unihra_get_ngrams` | Phrase list from an existing result |
 
-**Example MCP config** (Cursor / Claude Code–style):
+**Example MCP configuration** (adjust paths to your Python executable):
 
 ```json
 {
@@ -241,17 +261,14 @@ The package also exposes the console entry point `unihra-mcp` (same behavior as 
 }
 ```
 
-A small helper that prints this JSON and shows how to start the server locally: `examples/mcp_server_usage.py`.
-
-**Russian documentation** (full guide, including MCP): [docs/README.ru.md](docs/README.ru.md).
+Optional: `examples/mcp_server_usage.py` prints a sample config and shows how to launch the server locally.
 
 ---
 
 <div align="center">
-    <p>Developed with ❤️ by <b>Unihra Team</b></p>
-    <p>
-        <a href="https://t.me/mncosine">Telegram News</a> • 
-        <a href="https://unihra.ru">Web Service</a> • 
-        <a href="https://t.me/UniHRA_bot">Get API Key Bot</a>
-    </p>
+
+**Unihra Team**
+
+[Telegram — news](https://t.me/mncosine) · [unihra.ru](https://unihra.ru) · [API key — @UniHRA_bot](https://t.me/UniHRA_bot)
+
 </div>
