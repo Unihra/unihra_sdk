@@ -16,6 +16,10 @@ class UnihraDependencyError(UnihraError):
     """Raised when optional dependencies (pandas, openpyxl) are missing."""
     pass
 
+class UnihraStorageError(UnihraError):
+    """Errors related to local result storage and file operations."""
+    pass
+
 class UnihraApiError(UnihraError):
     """Errors returned by the API."""
     def __init__(self, message: str, code: Optional[int] = None, details: Any = None):

@@ -1,18 +1,16 @@
 import asyncio
 import importlib
 import json
+import os
 import pathlib
 import sys
 import types
-
 import pytest
-
 
 class FakeTextContent:
     def __init__(self, type, text):
         self.type = type
         self.text = text
-
 
 class FakeTool:
     def __init__(self, name, description, inputSchema):
@@ -20,231 +18,102 @@ class FakeTool:
         self.description = description
         self.inputSchema = inputSchema
 
-
 class FakeServer:
     def __init__(self, name):
         self.name = name
-        self._list_tools_handler = None
         self._call_tool_handler = None
-
     def list_tools(self):
-        def decorator(func):
-            self._list_tools_handler = func
-            return func
+        def decorator(func): return func
         return decorator
-
     def call_tool(self):
-        def decorator(func):
-            self._call_tool_handler = func
-            return func
+        def decorator(func): self._call_tool_handler = func; return func
         return decorator
+    def create_initialization_options(self): return {}
+    async def run(self, r, w, opt): return None
 
-    def create_initialization_options(self):
-        return {}
+mcp_mock = types.ModuleType("mcp")
+mcp_mock.server = types.ModuleType("mcp.server")
+mcp_mock.server.Server = FakeServer
+mcp_mock.server.stdio = types.ModuleType("mcp.server.stdio")
+mcp_mock.server.stdio.stdio_server = lambda: type("_D", (), {"__aenter__": lambda s: (object(), object()), "__aexit__": lambda s, *a: None})()
+mcp_mock.types = types.ModuleType("mcp.types")
+mcp_mock.types.TextContent = FakeTextContent
+mcp_mock.types.Tool = FakeTool
 
-    async def run(self, read_stream, write_stream, options):
-        return None
-
+sys.modules["mcp"] = mcp_mock
+sys.modules["mcp.types"] = mcp_mock.types
+sys.modules["mcp.server"] = mcp_mock.server
+sys.modules["mcp.server.stdio"] = mcp_mock.server.stdio
 
 class FakeClient:
-    def health(self):
-        return {"status": "ok"}
-
+    def __init__(self, storage_path):
+        self.storage_path = storage_path
+    
     def analyze(self, **kwargs):
         return {
-            "block_comparison": [
+            "anchors_analysis":[
                 {
-                    "word": "price",
-                    "action_needed": "Добавить",
-                    "frequency": 3.0,
-                },
-                {
-                    "word": "stock",
-                    "action_needed": "Ок",
-                    "frequency": 3.0,
-                },
-            ],
-            "semantic_context_analysis": [
-                {
-                    "lemma": "battery",
-                    "gap": 10.5,
-                    "own_score": 0.0,
-                    "coverage_percent": 80.0,
-                    "recommendation": "Add to Title",
+                    "anchor": "купить", 
+                    "frequency_own": 0, 
+                    "frequency_comp_avg": 5.0, 
+                    "pages_count": 3
                 }
             ],
-            "drmaxs": {
-                "by_frequency": [
-                    {"word": "logistics", "similarity_score": 0.89, "present_on_own_page": False}
-                ]
-            },
-            "page_structure": [{"url": kwargs.get("own_page")}],
-            "ngrams_analysis": [
-                {
-                    "ngram": "fast delivery",
-                    "pages_count": 4,
-                    "frequency_avg": 2.0,
-                    "ngram_type": "bigrams",
-                    "present_on_own_page": True,
-                }
-            ],
+            "semantic_context_analysis": [],
+            "block_comparison": [],
+            "ngrams_analysis":[],
+            "page_structure":[],
+            "drmaxs": {}
         }
 
-    def analyze_stream(self, **kwargs):
-        yield {"state": "PROGRESS", "progress": 50}
-        yield {"state": "SUCCESS", "result": {"ok": True}}
-
-    def get_page_structure(self, task_id):
-        return [{"url": "https://example.com", "metrics": {"char_count_no_spaces": 100}}]
-
-
 @pytest.fixture
-def mcp_server_module(monkeypatch):
+def mcp_server_module(monkeypatch, tmp_path):
+    os.environ["UNIHRA_RESULTS_DIR"] = str(tmp_path / "results")
     project_root = pathlib.Path(__file__).resolve().parents[1]
     monkeypatch.syspath_prepend(str(project_root / "src"))
-
-    for module_name in list(sys.modules.keys()):
-        if module_name == "unihra" or module_name.startswith("unihra."):
-            sys.modules.pop(module_name)
-
-    fake_mcp = types.ModuleType("mcp")
-    fake_mcp_types = types.ModuleType("mcp.types")
-    fake_mcp_types.TextContent = FakeTextContent
-    fake_mcp_types.Tool = FakeTool
-
-    fake_mcp_server = types.ModuleType("mcp.server")
-    fake_mcp_server.Server = FakeServer
-
-    fake_mcp_stdio = types.ModuleType("mcp.server.stdio")
-
-    class _DummyContext:
-        async def __aenter__(self):
-            return object(), object()
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-    def stdio_server():
-        return _DummyContext()
-
-    fake_mcp_stdio.stdio_server = stdio_server
-    fake_mcp.types = fake_mcp_types
-    fake_mcp.server = fake_mcp_server
-
-    monkeypatch.setitem(sys.modules, "mcp", fake_mcp)
-    monkeypatch.setitem(sys.modules, "mcp.types", fake_mcp_types)
-    monkeypatch.setitem(sys.modules, "mcp.server", fake_mcp_server)
-    monkeypatch.setitem(sys.modules, "mcp.server.stdio", fake_mcp_stdio)
-
-    module = importlib.import_module("unihra.mcp_server")
-    return importlib.reload(module)
-
+    
+    import unihra.mcp_server
+    return importlib.reload(unihra.mcp_server)
 
 def _tool_result_payload(result):
-    assert isinstance(result, list)
-    assert result
-    content = result[0]
-    assert content.type == "text"
-    return json.loads(content.text)
+    return json.loads(result[0].text)
 
-
-def test_build_server_registers_tools(mcp_server_module):
-    server = mcp_server_module.build_server(FakeClient())
-    tools = asyncio.run(server._list_tools_handler())
-    names = [tool.name for tool in tools]
-
-    assert "unihra_health" in names
-    assert "unihra_analyze" in names
-    assert "unihra_get_word_actions" in names
-    assert "unihra_get_gaps" in names
-    assert "unihra_get_vectors" in names
-    assert "unihra_get_ngrams" in names
-
-
-def test_call_tool_health(mcp_server_module):
-    server = mcp_server_module.build_server(FakeClient())
-    result = asyncio.run(server._call_tool_handler("unihra_health", {}))
-    payload = _tool_result_payload(result)
-    assert payload["status"] == "ok"
-
-
-def test_call_tool_analyze_returns_clean_meta(mcp_server_module):
-    server = mcp_server_module.build_server(FakeClient())
-    result = asyncio.run(
-        server._call_tool_handler(
-            "unihra_analyze",
-            {"own_page": "https://my.site", "competitors": ["https://comp.site"]},
-        )
-    )
-    payload = _tool_result_payload(result)
-    assert "_meta" in payload
-    assert payload["_meta"]["gaps_returned"] >= 1
-    assert "semantic_context_analysis" in payload
-
-
-def test_call_tool_analyze_stream_events(mcp_server_module):
-    server = mcp_server_module.build_server(FakeClient())
-    result = asyncio.run(
-        server._call_tool_handler(
-            "unihra_analyze_stream_events",
-            {"own_page": "https://my.site", "competitors": ["https://comp.site"]},
-        )
-    )
+def test_analyze_and_save_workflow(mcp_server_module, tmp_path):
+    client = FakeClient(tmp_path / "results")
+    server = mcp_server_module.build_server(client)
+    
+    result = asyncio.run(server._call_tool_handler("unihra_analyze", {
+        "own_page": "https://site.com", 
+        "competitors":["https://comp.com"]
+    }))
+    
     payload = _tool_result_payload(result)
 
-    assert isinstance(payload, list)
-    assert payload[-1]["state"] == "SUCCESS"
+    assert "result_id" in payload
+    assert payload["own_page"] == "https://site.com"
+    assert "data_blocks" in payload
 
+    result_id = payload["result_id"]
+    saved_file = tmp_path / "results" / f"{result_id}.json"
+    assert saved_file.exists()
 
-def test_call_tool_get_word_actions_maps_russian_labels(mcp_server_module):
-    server = mcp_server_module.build_server(FakeClient())
-    analyze_result = {
-        "block_comparison": [
-            {"word": "price", "action_needed": "Добавить", "frequency": 3.0},
-            {"word": "stock", "action_needed": "Ок", "frequency": 3.0},
-        ]
-    }
-    result = asyncio.run(
-        server._call_tool_handler(
-            "unihra_get_word_actions",
-            {"result": analyze_result, "action": "all"},
-        )
-    )
-    payload = _tool_result_payload(result)
+def test_read_anchors_segment(mcp_server_module, tmp_path):
+    client = FakeClient(tmp_path / "results")
+    server = mcp_server_module.build_server(client)
 
-    assert payload["counts"]["add"] == 1
-    assert payload["counts"]["ok"] == 1
+    analyze_res = asyncio.run(server._call_tool_handler("unihra_analyze", {
+        "own_page": "https://site.com", "competitors": ["https://comp.com"]
+    }))
+    
+    analyze_payload = _tool_result_payload(analyze_res)
+    result_id = analyze_payload["result_id"]
 
+    read_res = asyncio.run(server._call_tool_handler("unihra_get_anchors", {
+        "result_id": result_id
+    }))
+    
+    payload = _tool_result_payload(read_res)
 
-def test_call_tool_get_gaps(mcp_server_module):
-    server = mcp_server_module.build_server(FakeClient())
-    analyze_result = {
-        "semantic_context_gaps": [
-            {
-                "lemma": "battery",
-                "gap": 10.5,
-                "coverage_percent": 80.0,
-                "recommendation": "Title",
-            }
-        ]
-    }
-    result = asyncio.run(
-        server._call_tool_handler(
-            "unihra_get_gaps",
-            {"result": analyze_result, "top_n": 5},
-        )
-    )
-    payload = _tool_result_payload(result)
-
-    assert "groups" in payload
-    assert "Title" in payload["groups"]
-
-
-def test_call_tool_get_page_structure_strips_junk(mcp_server_module):
-    server = mcp_server_module.build_server(FakeClient())
-    result = asyncio.run(
-        server._call_tool_handler("unihra_get_page_structure", {"task_id": "t1"})
-    )
-    payload = _tool_result_payload(result)
-    assert isinstance(payload, list)
-    assert payload[0]["url"] == "https://example.com"
+    assert "anchors" in payload
+    assert len(payload["anchors"]) > 0
+    assert payload["anchors"][0]["anchor"] == "купить"

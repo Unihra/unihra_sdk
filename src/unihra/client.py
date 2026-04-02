@@ -1,5 +1,7 @@
 import json
+import os
 import requests
+from pathlib import Path
 from typing import List, Generator, Dict, Any, Literal, Optional
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -12,7 +14,7 @@ except ImportError:
 
 from .exceptions import (
     UnihraError, UnihraApiError, UnihraConnectionError, 
-    UnihraValidationError, UnihraDependencyError, raise_for_error_code
+    UnihraValidationError, UnihraDependencyError, UnihraStorageError, raise_for_error_code
 )
 
 BASE_URL = "https://unihra.ru"
@@ -27,18 +29,19 @@ ACTION_MAP = {
 
 class UnihraClient:
     """
-    Official Python Client for Unihra API.
+    Official Python Client for Unihra API with local storage support.
     """
 
-    def __init__(self, api_key: str, base_url: str = BASE_URL, max_retries: int = 0):
+    def __init__(self, api_key: str, base_url: str = BASE_URL, max_retries: int = 0, storage_dir: str = "unihra_results"):
         self.base_url = base_url.rstrip('/')
         self.api_v1 = f"{self.base_url}/api/v1"
+        self.storage_path = Path(storage_dir)
         self.session = requests.Session()
         
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "UnihraPythonSDK/1.3.0"
+            "User-Agent": "UnihraPythonSDK/1.5.0"
         })
 
         if max_retries > 0:
@@ -72,10 +75,10 @@ class UnihraClient:
             
             # API returns a List of objects. Normalize each one.
             if isinstance(data, list):
-                return [self._normalize_keys(item) for item in data]
-            return []
+                return[self._normalize_keys(item) for item in data]
+            return[]
         except requests.exceptions.RequestException:
-            return []
+            return[]
 
     def analyze(
         self, 
@@ -142,6 +145,57 @@ class UnihraClient:
         
         return last_event
 
+    def _strip_id_recursively(self, obj: Any) -> Any:
+        """Рекурсивная очистка технических ID для экономии места и токенов."""
+        tech_keys = {"analysis_id", "task_id", "block_id", "id"}
+        if isinstance(obj, dict):
+            return {k: self._strip_id_recursively(v) for k, v in obj.items() if k not in tech_keys}
+        if isinstance(obj, list):
+            return [self._strip_id_recursively(i) for i in obj]
+        return obj
+
+    def analyze_and_save(self, **kwargs) -> Dict[str, Any]:
+        """
+        Runs analysis, cleans IDs and splits result into local JSON files to avoid LLM context limits.
+        Returns a manifest with file paths and analysis ID.
+        """
+        result = self.analyze(**kwargs)
+        analysis_id = result.get("_meta", {}).get("task_id", "unknown")
+        
+        target_dir = self.storage_path / analysis_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest = {
+            "analysis_id": analysis_id,
+            "files": {}
+        }
+
+        # Mapping internal keys to segment filenames
+        segments = {
+            "gaps": "semantic_context_analysis",
+            "words": "block_comparison",
+            "ngrams": "ngrams_analysis",
+            "anchors": "anchors_analysis",
+            "vectors": "drmaxs",
+            "structure": "page_structure"
+        }
+
+        try:
+            for file_key, data_key in segments.items():
+                data = result.get(data_key,[])
+                
+                # Применяем очистку перед сохранением
+                cleaned_data = self._strip_id_recursively(data)
+                
+                file_path = target_dir / f"{file_key}.json"
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(cleaned_data, f, ensure_ascii=False, indent=2)
+                manifest["files"][file_key] = str(file_path.absolute())
+            
+            return manifest
+        except Exception as e:
+            raise UnihraStorageError(f"Failed to save analysis segments: {e}")
+
     def analyze_stream(
         self, 
         own_page: str, 
@@ -156,7 +210,7 @@ class UnihraClient:
         payload = {
             "own_page": own_page, 
             "competitor_urls": competitors,
-            "queries": queries or [],
+            "queries": queries or[],
             "lang": lang,
             "url_cookies": url_cookies or {}
         }
@@ -189,25 +243,21 @@ class UnihraClient:
                             
                             if state == "FAILURE":
                                 error_obj = data.get("error")
-                                if isinstance(error_obj, dict):
-                                    code = error_obj.get("code", 9999)
-                                    msg = error_obj.get("message", "Unknown error")
-                                else:
-                                    code = data.get("error_code", 9999)
-                                    msg = data.get("message", "Unknown error")
-
+                                code = error_obj.get("code", 9999) if isinstance(error_obj, dict) else 9999
+                                msg = error_obj.get("message", "Unknown error") if isinstance(error_obj, dict) else "Unknown error"
                                 raise_for_error_code(code, msg, data)
                             
                             if state == "SUCCESS":
                                 raw_result = data.get("result", {})
                                 normalized_result = self._normalize_keys(raw_result)
+                                normalized_result["_meta"] = {"task_id": task_id}
                                 
                                 if lang == 'en':
                                     final_result = self._translate_action_values(normalized_result)
                                 else:
                                     final_result = normalized_result
 
-                                # Fetch list of structures
+                                # Automatically fetch and attach page structure
                                 structure_data = self.get_page_structure(task_id)
                                 if structure_data:
                                     final_result['page_structure'] = structure_data
@@ -245,13 +295,11 @@ class UnihraClient:
         return result
 
     def _flatten_structure_list(self, structure_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Flatten list of structures for DataFrame (Table view).
-        """
-        flat_rows = []
+        """Flatten list of structures for DataFrame (Table view)."""
+        flat_rows =[]
         for item in structure_list:
             flat_item = {'url': item.get('url')}
-            for section in ['metrics', 'content', 'meta_tags']:
+            for section in['metrics', 'content', 'meta_tags']:
                 if section in item:
                     for k, v in item[section].items():
                         flat_item[k] = v
@@ -270,36 +318,30 @@ class UnihraClient:
         normalized_section = section.lower().replace(" ", "_").replace("-", "_")
         
         if normalized_section == "page_structure":
-            data = result.get("page_structure", [])
+            data = result.get("page_structure",[])
             if not data:
                 return pd.DataFrame()
             flat_list = self._flatten_structure_list(data)
             return pd.DataFrame(flat_list)
 
-        data = result.get(normalized_section, [])
+        data = result.get(normalized_section,[])
         return pd.DataFrame(data)
 
     def save_report(self, result: Dict[str, Any], filename: str = "report.xlsx", style_output: bool = True):
         """
         Saves the analysis result to Excel or CSV.
-        Requires 'pandas' and 'openpyxl'.
         """
         try:
             import pandas as pd
         except ImportError:
             raise UnihraDependencyError("Pandas is required. Run: pip install unihra[report]")
 
-        df_blocks = pd.DataFrame(result.get("block_comparison", []))
-        
-        ngrams_data = result.get("ngrams_analysis") or result.get("n_grams_analysis") or []
-        df_ngrams = pd.DataFrame(ngrams_data)
-        
-        gaps_data = result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or []
-        df_gaps = pd.DataFrame(gaps_data)
-        
+        df_blocks = pd.DataFrame(result.get("block_comparison",[]))
+        df_ngrams = pd.DataFrame(result.get("ngrams_analysis") or result.get("n_grams_analysis") or[])
+        df_gaps = pd.DataFrame(result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or[])
+        df_anchors = pd.DataFrame(result.get("anchors_analysis",[]))
         drmaxs_data = result.get("drmaxs", {})
-        
-        structure_data = result.get("page_structure", [])
+        structure_data = result.get("page_structure",[])
 
         if filename.endswith(".csv"):
             if not df_blocks.empty:
@@ -312,13 +354,19 @@ class UnihraClient:
                 raise UnihraDependencyError("Library 'openpyxl' is required for Excel export.")
 
             with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-                # 0. Page Structure
+                # 0. Anchors Analysis
+                if not df_anchors.empty:
+                    sheet = "Anchors"
+                    df_anchors_ordered = self._reorder_tech_columns(df_anchors)
+                    df_anchors_ordered.to_excel(writer, sheet_name=sheet, index=False)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_anchors_ordered, sheet_type="anchors")
+
+                # 1. Page Structure
                 if structure_data:
                     sheet = "Page Structure"
                     flat_struct = self._flatten_structure_list(structure_data)
                     df_struct = pd.DataFrame(flat_struct)
                     
-                    # Reorder: URL first
                     cols = df_struct.columns.tolist()
                     if 'url' in cols:
                         cols.insert(0, cols.pop(cols.index('url')))
@@ -327,12 +375,12 @@ class UnihraClient:
                     df_struct.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_struct, sheet_type="structure")
 
-                # 1. Semantic Gaps
+                # 2. Semantic Gaps
                 if not df_gaps.empty:
                     sheet = "Semantic Gaps"
-                    desired_cols = ['lemma', 'recommendation', 'context_snippet', 'gap', 'coverage_percent', 'competitor_avg_score', 'own_score']
-                    existing_cols = [c for c in desired_cols if c in df_gaps.columns]
-                    other_cols = [c for c in df_gaps.columns if c not in desired_cols]
+                    desired_cols =['lemma', 'recommendation', 'context_snippet', 'gap', 'coverage_percent', 'competitor_avg_score', 'own_score']
+                    existing_cols =[c for c in desired_cols if c in df_gaps.columns]
+                    other_cols =[c for c in df_gaps.columns if c not in desired_cols]
                     
                     df_gaps_ordered = df_gaps[existing_cols + other_cols]
                     df_gaps_ordered = self._reorder_tech_columns(df_gaps_ordered)
@@ -340,21 +388,21 @@ class UnihraClient:
                     df_gaps_ordered.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_gaps_ordered, sheet_type="gaps")
 
-                # 2. Word Analysis
+                # 3. Word Analysis
                 if not df_blocks.empty:
                     sheet = "Word Analysis"
                     df_blocks_ordered = self._reorder_tech_columns(df_blocks)
                     df_blocks_ordered.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_blocks_ordered, sheet_type="word_analysis")
                 
-                # 3. N-Grams
+                # 4. N-Grams
                 if not df_ngrams.empty:
                     sheet = "N-Grams"
                     df_ngrams_ordered = self._reorder_tech_columns(df_ngrams)
                     df_ngrams_ordered.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_ngrams_ordered, sheet_type="ngrams")
                 
-                # 4. Vectors
+                # 5. Vectors
                 if drmaxs_data and isinstance(drmaxs_data, dict):
                     for subkey, subdata in drmaxs_data.items():
                         if subdata and isinstance(subdata, list):
@@ -372,7 +420,7 @@ class UnihraClient:
             if not isinstance(df, pd.DataFrame) or df.empty: return df
             tech_cols = ['id', 'block_id', 'analysis_id']
             existing_tech = [c for c in df.columns if c in tech_cols]
-            main_cols = [c for c in df.columns if c not in tech_cols]
+            main_cols =[c for c in df.columns if c not in tech_cols]
             return df[main_cols + existing_tech] if existing_tech else df
         except ImportError:
             return df
@@ -413,12 +461,23 @@ class UnihraClient:
         col_map = {name: i + 1 for i, name in enumerate(df.columns)}
 
         if sheet_type == "structure":
-            # Wrap text for content fields
-            for col_name in ['url', 'h1_heading', 'meta_title', 'meta_description', 'heading_structure_raw']:
+            for col_name in['url', 'h1_heading', 'meta_title', 'meta_description', 'heading_structure_raw']:
                 if col_name in col_map:
                     idx = col_map[col_name]
                     for row in range(2, worksheet.max_row + 1):
                         worksheet.cell(row=row, column=idx).alignment = Alignment(wrap_text=True)
+
+        elif sheet_type == "anchors":
+            if 'frequency_own' in col_map and 'anchor' in col_map:
+                f_idx = col_map['frequency_own']
+                a_idx = col_map['anchor']
+                for row in range(2, worksheet.max_row + 1):
+                    val = worksheet.cell(row=row, column=f_idx).value
+                    try:
+                        is_missing = float(val) == 0 if val is not None else True
+                    except (ValueError, TypeError):
+                        is_missing = True
+                    worksheet.cell(row=row, column=a_idx).fill = red_fill if is_missing else green_fill
 
         elif sheet_type == "gaps":
             if 'own_score' in col_map and 'lemma' in col_map:
@@ -430,14 +489,10 @@ class UnihraClient:
                         is_missing = float(score_val) == 0 if score_val is not None else True
                     except (ValueError, TypeError):
                         is_missing = True
-                    if is_missing:
-                        worksheet.cell(row=row, column=lemma_idx).fill = red_fill
-                    else:
-                        worksheet.cell(row=row, column=lemma_idx).fill = green_fill
+                    worksheet.cell(row=row, column=lemma_idx).fill = red_fill if is_missing else green_fill
 
         else:
-            # Word Analysis, Vectors, etc.
-            target_cols = []
+            target_cols =[]
             if sheet_type == "word_analysis":
                 target_names = ["word", "lemma"]
                 target_cols = [col_map[c] for c in target_names if c in col_map]

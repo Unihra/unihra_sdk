@@ -1,3 +1,6 @@
+
+
+
 # Unihra Python SDK
 
 <div align="center">
@@ -17,8 +20,8 @@ English · [Русский](docs/README.ru.md)
 
 | | |
 | :---: | :--- |
-| **Product** | [unihra.ru](https://unihra.ru) — web interface |
-| **API reference** | [unihra.ru/docs](https://unihra.ru/docs) |
+| **Product** |[unihra.ru](https://unihra.ru) — web interface |
+| **API reference** |[unihra.ru/docs](https://unihra.ru/docs) |
 | **API key** | Telegram: [@UniHRA_bot](https://t.me/UniHRA_bot) |
 | **Updates** | [@mncosine](https://t.me/mncosine) |
 
@@ -33,6 +36,7 @@ English · [Русский](docs/README.ru.md)
 - **Word comparison (TF‑IDF)** — suggested actions per term (add, increase, decrease, ok).
 - **Phrases (n‑grams)** — recurring phrases across competitor pages.
 - **Vector / LSI terms (DrMaxs)** — semantically related vocabulary for the topic.
+- **Anchors (link texts)** — identify missing internal and external link texts used by competitors to rank.
 - **Cookies** — optional per‑URL cookie strings for pages behind login or gates.
 - **Streaming** — the client handles the live analysis stream and waits for completion.
 - **Retries** — optional HTTP retries with backoff for unstable networks.
@@ -85,7 +89,7 @@ result = client.analyze(
 )
 
 gaps = result.get("semantic_context_analysis", [])
-pages = result.get("page_structure", [])
+pages = result.get("page_structure",[])
 
 print(f"Semantic gap rows: {len(gaps)}")
 for p in pages:
@@ -94,7 +98,7 @@ for p in pages:
 
 ### 2. Save an Excel report
 
-Sheet names typically include *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N‑Grams*, and vector sections.
+Sheet names typically include *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N‑Grams*, *Anchors*, and vector sections.
 
 ```python
 client.save_report(result, "seo_report.xlsx")
@@ -188,6 +192,27 @@ Semantic neighbours of the topic, grouped (e.g. `by_frequency`, `by_tfidf`), wit
 
 </details>
 
+<details>
+<summary><b>6. Anchors analysis</b></summary>
+
+Comparison of link texts (anchors) used across pages.
+
+- `anchor` — the link text
+- `frequency_own` — occurrences on your page
+- `frequency_comp_avg` — average occurrences across competitors
+- `pages_count` — number of competitor pages using this anchor
+
+```json
+{
+  "anchor": "buy online",
+  "frequency_own": 0,
+  "frequency_comp_avg": 5.0,
+  "pages_count": 3
+}
+```
+
+</details>
+
 ---
 
 ## Command line
@@ -230,20 +255,22 @@ The optional **MCP server** lets compatible assistants call Unihra as **tools** 
 3. Start: `python -m unihra.mcp_server` or the command `unihra-mcp`.
 4. Point your client’s MCP settings at that Python and module (see below).
 
-**Large results:** the `unihra_analyze` tool returns **filtered, compact** data (plus a small `_meta` summary) so answers fit typical LLM context limits. For a full raw API‑size payload, use the Python SDK or API directly. You can adjust filter parameters exposed by the tool where needed.
+**File-backed architecture:** The `unihra_analyze` tool runs the full analysis and saves the large raw result (~200k chars) to a local JSON file, returning only a `result_id` and a compact summary to the LLM. The model then uses `unihra_get_*` tools with the `result_id` to retrieve specific data slices on demand. This keeps the context small while ensuring no data is lost.
 
-**Available tools (summary)**
+**Available tools:**
 
 | Tool | Purpose |
 |------|---------|
 | `unihra_health` | Check that the service is reachable |
-| `unihra_analyze` | Full analysis with default noise filtering |
-| `unihra_analyze_stream_events` | Same run as step‑by‑step stream events (e.g. to read `task_id`) |
-| `unihra_get_page_structure` | Fetch heading/meta report for a finished `task_id` |
-| `unihra_get_gaps` | Re‑group semantic gaps from an existing result |
-| `unihra_get_vectors` | LSI / vector terms from an existing result |
+| `unihra_analyze` | Primary tool: runs full analysis, saves to disk, returns `result_id` + summary |
+| `unihra_list_results` | List all saved analysis results on disk |
+| `unihra_delete_result` | Delete a saved analysis result by `result_id` |
+| `unihra_get_page_structure` | Fetch heading/meta report for a `result_id` |
+| `unihra_get_gaps` | Get semantic gaps and zone recommendations from a `result_id` |
+| `unihra_get_anchors` | Get anchor text (link texts) analysis from a `result_id` |
+| `unihra_get_vectors` | LSI / vector terms from a `result_id` |
 | `unihra_get_word_actions` | TF‑IDF words grouped by action |
-| `unihra_get_ngrams` | Phrase list from an existing result |
+| `unihra_get_ngrams` | Phrase list from a `result_id` |
 
 **Example MCP configuration** (adjust paths to your Python executable):
 
@@ -252,7 +279,7 @@ The optional **MCP server** lets compatible assistants call Unihra as **tools** 
   "mcpServers": {
     "unihra": {
       "command": "python",
-      "args": ["-m", "unihra.mcp_server"],
+      "args":["-m", "unihra.mcp_server"],
       "env": {
         "UNIHRA_API_KEY": "YOUR_KEY_HERE"
       }
@@ -261,14 +288,12 @@ The optional **MCP server** lets compatible assistants call Unihra as **tools** 
 }
 ```
 
-Optional: `examples/mcp_server_usage.py` prints a sample config and shows how to launch the server locally.
-
 ---
 
 <div align="center">
 
 **Unihra Team**
 
-[Telegram — news](https://t.me/mncosine) · [unihra.ru](https://unihra.ru) · [API key — @UniHRA_bot](https://t.me/UniHRA_bot)
+[Telegram — news](https://t.me/mncosine) · [unihra.ru](https://unihra.ru) ·[API key — @UniHRA_bot](https://t.me/UniHRA_bot)
 
 </div>
