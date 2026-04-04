@@ -56,7 +56,8 @@ class FakeClient:
                     "anchor": "купить", 
                     "frequency_own": 0, 
                     "frequency_comp_avg": 5.0, 
-                    "pages_count": 3
+                    "pages_count": 3,
+                    "links": ["https://comp1.com/buy", "https://comp2.com/shop"]
                 }
             ],
             "semantic_context_analysis": [],
@@ -117,3 +118,7 @@ def test_read_anchors_segment(mcp_server_module, tmp_path):
     assert "anchors" in payload
     assert len(payload["anchors"]) > 0
     assert payload["anchors"][0]["anchor"] == "купить"
+    
+    # Verify links field is present and contains expected values
+    assert "links" in payload["anchors"][0]
+    assert payload["anchors"][0]["links"] == ["https://comp1.com/buy", "https://comp2.com/shop"]

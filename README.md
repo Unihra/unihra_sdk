@@ -201,13 +201,18 @@ Comparison of link texts (anchors) used across pages.
 - `frequency_own` — occurrences on your page
 - `frequency_comp_avg` — average occurrences across competitors
 - `pages_count` — number of competitor pages using this anchor
+- `links` — list of href URLs where this anchor text was found across all pages (own + competitors)
 
 ```json
 {
   "anchor": "buy online",
   "frequency_own": 0,
   "frequency_comp_avg": 5.0,
-  "pages_count": 3
+  "pages_count": 3,
+  "links": [
+    "https://competitor.com/products/buy",
+    "https://other-competitor.com/shop"
+  ]
 }
 ```
 
@@ -255,7 +260,7 @@ The optional **MCP server** lets compatible assistants call Unihra as **tools** 
 3. Start: `python -m unihra.mcp_server` or the command `unihra-mcp`.
 4. Point your client’s MCP settings at that Python and module (see below).
 
-**File-backed architecture:** The `unihra_analyze` tool runs the full analysis and saves the large raw result (~200k chars) to a local JSON file, returning only a `result_id` and a compact summary to the LLM. The model then uses `unihra_get_*` tools with the `result_id` to retrieve specific data slices on demand. This keeps the context small while ensuring no data is lost.
+**How it works:** The `unihra_analyze` tool runs the full analysis and saves the result locally, returning only a `result_id` and a compact summary. You then use `unihra_get_*` tools with the `result_id` to retrieve specific data sections on demand — gaps, anchors, words, n-grams, vectors, or page structure. This lets you explore the full report section by section.
 
 **Available tools:**
 

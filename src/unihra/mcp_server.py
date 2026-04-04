@@ -1,22 +1,12 @@
 """
 Unihra MCP Server
 =================
-File-backed MCP server for the Unihra SEO & Semantic Analysis SDK.
+MCP server for the Unihra SEO & Semantic Analysis SDK.
 
-Architecture
-------------
-1. unihra_analyze  — runs the full analysis, saves the raw result to a local
-   JSON file, returns only a result_id + a compact summary to the model.
-   The model never receives the full payload (which can be 200k+ chars).
-
-2. unihra_get_*    — each tool loads the saved file by result_id and returns
-   only the requested slice, with light noise-filtering applied.
-   The model iterates over slices as needed — no context overflow.
-
-This means:
-  • Nothing is lost  — the full result is always on disk.
-  • Context stays small — the model sees summaries and targeted slices.
-  • No hard limits on data richness — filters are soft and adjustable.
+Overview
+--------
+Provides tools for AI assistants to run SEO analysis and retrieve results
+in focused sections (gaps, anchors, words, n-grams, vectors, page structure).
 
 Storage
 -------
@@ -93,7 +83,7 @@ def _results_dir() -> Path:
 
 
 def _save_result(result: dict, own_page: str, competitors: List[str]) -> str:
-    """Save full raw result to disk, return result_id."""
+    """Save analysis result to disk, return result_id."""
     result_id = uuid.uuid4().hex[:12]
     payload = {
         "result_id":   result_id,
@@ -127,28 +117,31 @@ def _load_meta(result_id: str) -> dict:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return {k: v for k, v in payload.items() if k != "data"}
 
+
 def _strip_junk(obj: Any) -> Any:
+    """Remove technical identifiers for cleaner output."""
     if isinstance(obj, dict):
         return {k: _strip_junk(v) for k, v in obj.items() if k not in _JUNK_FIELDS}
     if isinstance(obj, list):
-        return[_strip_junk(i) for i in obj]
+        return [_strip_junk(i) for i in obj]
     return obj
 
 
 def _norm_action(raw: str) -> str:
     return _ACTION_MAP.get(raw, raw).lower()
 
+
 def _build_summary(result: dict, result_id: str, own_page: str, competitors: List[str]) -> dict:
     """
     Compact summary returned immediately after analysis.
-    Model uses this to decide which unihra_get_* tools to call next.
+    Used to decide which unihra_get_* tools to call next.
     """
     gaps    = result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or []
-    blocks  = result.get("block_comparison") or[]
-    ngrams  = result.get("ngrams_analysis") or result.get("n_grams_analysis") or[]
+    blocks  = result.get("block_comparison") or []
+    ngrams  = result.get("ngrams_analysis") or result.get("n_grams_analysis") or []
     drmaxs  = result.get("drmaxs") or {}
-    struct  = result.get("page_structure") or[]
-    anchors = result.get("anchors_analysis") or[]
+    struct  = result.get("page_structure") or []
+    anchors = result.get("anchors_analysis") or []
 
     # Top-5 gaps by gap score
     top_gaps = sorted(gaps, key=lambda x: x.get("gap", 0), reverse=True)[:5]
@@ -160,12 +153,14 @@ def _build_summary(result: dict, result_id: str, own_page: str, competitors: Lis
         action_counts[a] = action_counts.get(a, 0) + 1
 
     # Top-5 n-grams by pages_count, missing from own page
-    top_ngrams = sorted([n for n in ngrams if not n.get("present_on_own_page", True)],
+    top_ngrams = sorted(
+        [n for n in ngrams if not n.get("present_on_own_page", True)],
         key=lambda x: x.get("pages_count", 0), reverse=True
     )[:5]
 
     # Top-5 missing anchors by competitor average frequency
-    top_anchors = sorted([a for a in anchors if a.get("frequency_own", 0) == 0],
+    top_anchors = sorted(
+        [a for a in anchors if a.get("frequency_own", 0) == 0],
         key=lambda x: x.get("frequency_comp_avg", 0), reverse=True
     )[:5]
 
@@ -180,10 +175,10 @@ def _build_summary(result: dict, result_id: str, own_page: str, competitors: Lis
     }
 
     return {
-        "result_id":   result_id,
-        "own_page":    own_page,
-        "competitors": competitors,
-        "data_blocks": {
+        "result_id":    result_id,
+        "own_page":     own_page,
+        "competitors":  competitors,
+        "data_blocks":  {
             "page_structure":            len(struct),
             "semantic_context_analysis": len(gaps),
             "block_comparison":          len(blocks),
@@ -192,7 +187,7 @@ def _build_summary(result: dict, result_id: str, own_page: str, competitors: Lis
             "drmaxs_sections":           list(drmaxs.keys()),
         },
         "own_page_snapshot": own_snap,
-        "top5_priority_gaps":[
+        "top5_priority_gaps": [
             {
                 "lemma":            g.get("lemma"),
                 "gap":              g.get("gap"),
@@ -204,7 +199,7 @@ def _build_summary(result: dict, result_id: str, own_page: str, competitors: Lis
             for g in top_gaps
         ],
         "block_comparison_action_counts": action_counts,
-        "top5_missing_ngrams":[
+        "top5_missing_ngrams": [
             {
                 "ngram":         n.get("ngram"),
                 "pages_count":   n.get("pages_count"),
@@ -212,7 +207,7 @@ def _build_summary(result: dict, result_id: str, own_page: str, competitors: Lis
             }
             for n in top_ngrams
         ],
-        "top5_missing_anchors":[
+        "top5_missing_anchors": [
             {
                 "anchor":             a.get("anchor"),
                 "frequency_comp_avg": a.get("frequency_comp_avg"),
@@ -227,12 +222,13 @@ def _build_summary(result: dict, result_id: str, own_page: str, competitors: Lis
         ),
     }
 
+
 def build_server(client: UnihraClient) -> Server:
     server = Server("unihra-mcp")
 
     @server.list_tools()
     async def list_tools() -> list[mcp_types.Tool]:
-        return[
+        return [
             mcp_types.Tool(
                 name="unihra_health",
                 description="Check Unihra API availability. Returns service status.",
@@ -253,8 +249,7 @@ def build_server(client: UnihraClient) -> Server:
                     "  • 'Which LSI / semantic / vector words are missing from my page?'\n"
                     "  • Any task involving comparing text content of two or more URLs\n\n"
                     "DO NOT fetch or parse pages yourself — the tool handles everything server-side.\n\n"
-                    "RESPONSE: Returns a result_id and a compact summary only.\n"
-                    "The full result (~200k chars) is saved to disk automatically.\n"
+                    "RESPONSE: Returns a result_id and a compact summary.\n"
                     "Use result_id with unihra_get_* tools to retrieve specific data slices.\n\n"
                     "Takes 30–120 seconds depending on page count and size."
                 ),
@@ -268,14 +263,14 @@ def build_server(client: UnihraClient) -> Server:
                         "competitors": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Competitor page URLs. 3–10 recommended for statistical reliability.",
+                            "description": "Competitor page URLs. 3-10 recommended for statistical reliability.",
                         },
                         "queries": {
                             "type": "array",
                             "items": {"type": "string"},
                             "description": (
                                 "Target search queries the page should rank for. "
-                                "REQUIRED for zone recommendations (Add to Title/H1, Add to H2/H3 …). "
+                                "REQUIRED for zone recommendations (Add to Title/H1, Add to H2/H3 ...). "
                                 "Example: ['купить шланг', 'шланг высокого давления цена']"
                             ),
                         },
@@ -293,21 +288,21 @@ def build_server(client: UnihraClient) -> Server:
                             ),
                         },
                     },
-                    "required":["own_page", "competitors"],
+                    "required": ["own_page", "competitors"],
                 },
             ),
             mcp_types.Tool(
                 name="unihra_list_results",
                 description=(
-                    "List all saved analysis results on disk.\n"
+                    "List all saved analysis results.\n"
                     "Returns result_id, own_page, competitors, and saved_at for each result.\n"
                     "Use to find a result_id for a previously analysed page."
                 ),
-                inputSchema={"type": "object", "properties": {}, "required":[]},
+                inputSchema={"type": "object", "properties": {}, "required": []},
             ),
             mcp_types.Tool(
                 name="unihra_delete_result",
-                description="Delete a saved analysis result from disk by result_id.",
+                description="Delete a saved analysis result by result_id.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -322,7 +317,7 @@ def build_server(client: UnihraClient) -> Server:
                     "Get page structure data from a saved analysis.\n\n"
                     "Returns for each URL (own page + competitors):\n"
                     "  • url, meta title, meta description\n"
-                    "  • h1_heading, heading_structure_raw (H1–H6 tree as compact string)\n"
+                    "  • h1_heading, heading_structure_raw (H1-H6 tree as compact string)\n"
                     "  • uniqueness_percentage, char_count_no_spaces\n\n"
                     "Use to compare headings, titles, and content volume across pages."
                 ),
@@ -362,7 +357,7 @@ def build_server(client: UnihraClient) -> Server:
                             "type": "number",
                             "description": (
                                 "Min competitor coverage % to include. Default 20. "
-                                "Lower to 10 when you have only 1–2 competitors."
+                                "Lower to 10 when you have only 1-2 competitors."
                             ),
                             "default": 20.0,
                         },
@@ -385,13 +380,14 @@ def build_server(client: UnihraClient) -> Server:
                     "required": ["result_id"],
                 },
             ),
-
             mcp_types.Tool(
                 name="unihra_get_anchors",
                 description=(
                     "Get anchor text (link texts) analysis from a saved analysis.\n\n"
-                    "Each item: anchor, frequency_own, frequency_comp_avg, pages_count.\n\n"
-                    "Use to find missing internal/external link texts that competitors use to rank."
+                    "Each item: anchor, frequency_own, frequency_comp_avg, pages_count, links.\n\n"
+                    "'links' is a list of href values where the anchor text was found across all pages.\n"
+                    "Use to find missing link texts that competitors use to rank, "
+                    "and to see exactly which URLs those anchors point to."
                 ),
                 inputSchema={
                     "type": "object",
@@ -438,8 +434,8 @@ def build_server(client: UnihraClient) -> Server:
                         },
                         "sections": {
                             "type": "array",
-                            "items": {"type": "string", "enum":["by_tfidf", "by_frequency", "by_sites_count"]},
-                            "description": "Which sections to return. Default:['by_tfidf', 'by_frequency'].",
+                            "items": {"type": "string", "enum": ["by_tfidf", "by_frequency", "by_sites_count"]},
+                            "description": "Which sections to return. Default: ['by_tfidf', 'by_frequency'].",
                         },
                         "dedupe_with_gaps": {
                             "type": "boolean",
@@ -453,7 +449,6 @@ def build_server(client: UnihraClient) -> Server:
                     "required": ["result_id"],
                 },
             ),
-
             mcp_types.Tool(
                 name="unihra_get_word_actions",
                 description=(
@@ -470,7 +465,7 @@ def build_server(client: UnihraClient) -> Server:
                         "result_id": {"type": "string", "description": "From unihra_analyze."},
                         "action": {
                             "type": "string",
-                            "enum":["add", "increase", "decrease", "ok", "all"],
+                            "enum": ["add", "increase", "decrease", "ok", "all"],
                             "description": "Filter by action. Default 'all'.",
                             "default": "all",
                         },
@@ -493,7 +488,6 @@ def build_server(client: UnihraClient) -> Server:
                     "required": ["result_id"],
                 },
             ),
-
             mcp_types.Tool(
                 name="unihra_get_ngrams",
                 description=(
@@ -504,7 +498,7 @@ def build_server(client: UnihraClient) -> Server:
                     "present_on_own_page.\n\n"
                     "Note: present_on_own_page reflects exact phrase match on your page — "
                     "useful to verify which competitor patterns you already cover.\n\n"
-                    "Use to find stable 2–3 word patterns to incorporate into content."
+                    "Use to find stable 2-3 word patterns to incorporate into content."
                 ),
                 inputSchema={
                     "type": "object",
@@ -530,7 +524,7 @@ def build_server(client: UnihraClient) -> Server:
                         },
                         "ngram_type": {
                             "type": "string",
-                            "enum":["all", "bigrams", "lemma_trigrams"],
+                            "enum": ["all", "bigrams", "lemma_trigrams"],
                             "description": "Filter by phrase length. Default 'all'.",
                             "default": "all",
                         },
@@ -538,7 +532,6 @@ def build_server(client: UnihraClient) -> Server:
                     "required": ["result_id"],
                 },
             ),
-
         ]
 
     @server.call_tool()
@@ -549,7 +542,7 @@ def build_server(client: UnihraClient) -> Server:
 
             elif name == "unihra_analyze":
                 _require(arguments, "own_page", "competitors")
-                own_page    = arguments["own_page"]
+                own_page = arguments["own_page"]
                 competitors = arguments["competitors"]
 
                 raw = client.analyze(
@@ -562,11 +555,11 @@ def build_server(client: UnihraClient) -> Server:
                 )
 
                 result_id = _save_result(raw, own_page, competitors)
-                summary   = _build_summary(raw, result_id, own_page, competitors)
+                summary = _build_summary(raw, result_id, own_page, competitors)
                 return _ok(summary)
 
             elif name == "unihra_list_results":
-                items =[]
+                items = []
                 for p in sorted(_results_dir().glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
                     try:
                         meta = json.loads(p.read_text(encoding="utf-8"))
@@ -591,24 +584,24 @@ def build_server(client: UnihraClient) -> Server:
 
             elif name == "unihra_get_page_structure":
                 _require(arguments, "result_id")
-                data     = _load_result(arguments["result_id"])
-                struct   = _strip_junk(data.get("page_structure") or[])
+                data = _load_result(arguments["result_id"])
+                struct = _strip_junk(data.get("page_structure") or [])
                 own_only = arguments.get("own_only", False)
 
                 if own_only and struct:
                     own_page = _load_meta(arguments["result_id"]).get("own_page")
-                    struct =[s for s in struct if s.get("url") == own_page] or [struct[0]]
+                    struct = [s for s in struct if s.get("url") == own_page] or [struct[0]]
 
                 return _ok({"page_structure": struct})
 
             elif name == "unihra_get_gaps":
                 _require(arguments, "result_id")
-                data         = _load_result(arguments["result_id"])
-                top_n        = int(arguments.get("top_n", 50))
+                data = _load_result(arguments["result_id"])
+                top_n = int(arguments.get("top_n", 50))
                 min_coverage = float(arguments.get("min_coverage", 20.0))
-                min_gap      = float(arguments.get("min_gap", 0.5))
+                min_gap = float(arguments.get("min_gap", 0.5))
                 missing_only = bool(arguments.get("missing_only", False))
-                group        = bool(arguments.get("group_by_recommendation", False))
+                group = bool(arguments.get("group_by_recommendation", False))
 
                 gaps_raw = (
                     data.get("semantic_context_analysis")
@@ -616,8 +609,7 @@ def build_server(client: UnihraClient) -> Server:
                     or []
                 )
 
-                # Filter
-                filtered =[]
+                filtered = []
                 for item in gaps_raw:
                     if (item.get("coverage_percent") or 0.0) < min_coverage:
                         continue
@@ -633,8 +625,7 @@ def build_server(client: UnihraClient) -> Server:
                     groups: Dict[str, list] = {}
                     for item in filtered:
                         rec = item.get("recommendation") or "Other"
-                        groups.setdefault(rec,[]).append(item)
-                    # Apply top_n per group
+                        groups.setdefault(rec, []).append(item)
                     groups = {k: v[:top_n] for k, v in groups.items()}
                     return _ok({
                         "result_id":          arguments["result_id"],
@@ -653,20 +644,22 @@ def build_server(client: UnihraClient) -> Server:
 
             elif name == "unihra_get_anchors":
                 _require(arguments, "result_id")
-                data         = _load_result(arguments["result_id"])
-                top_n        = int(arguments.get("top_n", 50))
+                data = _load_result(arguments["result_id"])
+                top_n = int(arguments.get("top_n", 50))
                 missing_only = bool(arguments.get("missing_only", False))
 
                 anchors_raw = data.get("anchors_analysis") or []
 
-                filtered =[]
+                filtered = []
                 for item in anchors_raw:
                     if missing_only and (item.get("frequency_own") or 0) > 0:
                         continue
                     filtered.append(_strip_junk(item))
 
-                # Sort by competitors avg frequency, then by pages count
-                filtered.sort(key=lambda x: (x.get("frequency_comp_avg", 0), x.get("pages_count", 0)), reverse=True)
+                filtered.sort(
+                    key=lambda x: (x.get("frequency_comp_avg", 0), x.get("pages_count", 0)),
+                    reverse=True
+                )
 
                 return _ok({
                     "result_id":          arguments["result_id"],
@@ -678,19 +671,18 @@ def build_server(client: UnihraClient) -> Server:
 
             elif name == "unihra_get_vectors":
                 _require(arguments, "result_id")
-                data         = _load_result(arguments["result_id"])
-                top_n        = int(arguments.get("top_n", 40))
+                data = _load_result(arguments["result_id"])
+                top_n = int(arguments.get("top_n", 40))
                 missing_only = bool(arguments.get("missing_only", True))
-                sections_req = arguments.get("sections") or["by_tfidf", "by_frequency"]
-                dedupe_gaps  = bool(arguments.get("dedupe_with_gaps", True))
+                sections_req = arguments.get("sections") or ["by_tfidf", "by_frequency"]
+                dedupe_gaps = bool(arguments.get("dedupe_with_gaps", True))
 
                 drmaxs = data.get("drmaxs") or {}
 
-                # Words in gaps (for optional cross-dedup)
                 exclude: Set[str] = set()
                 if dedupe_gaps:
-                    gaps_raw = data.get("semantic_context_analysis") or data.get("semantic_context_gaps") or[]
-                    exclude  = {(g.get("lemma") or "").lower() for g in gaps_raw if g.get("lemma")}
+                    gaps_raw = data.get("semantic_context_analysis") or data.get("semantic_context_gaps") or []
+                    exclude = {(g.get("lemma") or "").lower() for g in gaps_raw if g.get("lemma")}
 
                 seen: Set[str] = set()
                 output: Dict[str, list] = {}
@@ -699,7 +691,7 @@ def build_server(client: UnihraClient) -> Server:
                     items = drmaxs.get(key)
                     if not isinstance(items, list):
                         continue
-                    result_items =[]
+                    result_items = []
                     for item in items:
                         word = (item.get("word") or "").lower()
                         if not word or word in seen or word in exclude:
@@ -713,19 +705,19 @@ def build_server(client: UnihraClient) -> Server:
                     output[key] = result_items[:top_n]
 
                 return _ok({
-                    "result_id":              arguments["result_id"],
-                    "sections_returned":      list(output.keys()),
-                    "deduped_against_gaps":   len(exclude) if dedupe_gaps else 0,
-                    "sections":               output,
+                    "result_id":            arguments["result_id"],
+                    "sections_returned":    list(output.keys()),
+                    "deduped_against_gaps": len(exclude) if dedupe_gaps else 0,
+                    "sections":             output,
                 })
 
             elif name == "unihra_get_word_actions":
                 _require(arguments, "result_id")
-                data          = _load_result(arguments["result_id"])
+                data = _load_result(arguments["result_id"])
                 action_filter = arguments.get("action", "all")
-                top_n         = int(arguments.get("top_n", 50))
-                min_freq      = float(arguments.get("min_frequency", 1.0))
-                exclude_ok    = bool(arguments.get("exclude_ok", True))
+                top_n = int(arguments.get("top_n", 50))
+                min_freq = float(arguments.get("min_frequency", 1.0))
+                exclude_ok = bool(arguments.get("exclude_ok", True))
 
                 words_raw = data.get("block_comparison") or []
                 groups: Dict[str, list] = {}
@@ -733,13 +725,13 @@ def build_server(client: UnihraClient) -> Server:
                 for item in words_raw:
                     if (item.get("frequency") or 0.0) < min_freq:
                         continue
-                    raw_action  = item.get("action_needed", "ok")
+                    raw_action = item.get("action_needed", "ok")
                     norm_action = _norm_action(raw_action)
                     if exclude_ok and norm_action == "ok":
                         continue
                     cleaned = _strip_junk(item)
                     cleaned["action_needed"] = norm_action
-                    groups.setdefault(norm_action,[]).append(cleaned)
+                    groups.setdefault(norm_action, []).append(cleaned)
 
                 if action_filter != "all":
                     groups = {k: v for k, v in groups.items() if k == action_filter}
@@ -755,15 +747,15 @@ def build_server(client: UnihraClient) -> Server:
 
             elif name == "unihra_get_ngrams":
                 _require(arguments, "result_id")
-                data            = _load_result(arguments["result_id"])
-                top_n           = int(arguments.get("top_n", 60))
+                data = _load_result(arguments["result_id"])
+                top_n = int(arguments.get("top_n", 60))
                 min_pages_count = int(arguments.get("min_pages_count", 2))
-                missing_only    = bool(arguments.get("missing_only", False))
-                ngram_type      = arguments.get("ngram_type", "all")
+                missing_only = bool(arguments.get("missing_only", False))
+                ngram_type = arguments.get("ngram_type", "all")
 
                 ngrams_raw = data.get("ngrams_analysis") or data.get("n_grams_analysis") or []
 
-                filtered =[]
+                filtered = []
                 for item in ngrams_raw:
                     if (item.get("pages_count") or 0) < min_pages_count:
                         continue
@@ -797,15 +789,16 @@ def build_server(client: UnihraClient) -> Server:
 
     return server
 
+
 def _ok(data: Any) -> list[mcp_types.TextContent]:
-    return[mcp_types.TextContent(
+    return [mcp_types.TextContent(
         type="text",
         text=json.dumps(data, ensure_ascii=False, indent=2),
     )]
 
 
 def _err(msg: str) -> list[mcp_types.TextContent]:
-    return[mcp_types.TextContent(
+    return [mcp_types.TextContent(
         type="text",
         text=json.dumps({"error": msg}, ensure_ascii=False),
     )]
@@ -819,11 +812,11 @@ def _require(arguments: dict, *keys: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Unihra MCP Server — file-backed SEO & Semantic Analysis over MCP."
+        description="Unihra MCP Server — SEO & Semantic Analysis over MCP."
     )
-    parser.add_argument("--key",         default=None, help="API key (or UNIHRA_API_KEY env var).")
-    parser.add_argument("--retries",     type=int, default=3, help="HTTP retries. Default: 3.")
-    parser.add_argument("--base-url",    default="https://unihra.ru", help="API base URL.")
+    parser.add_argument("--key", default=None, help="API key (or UNIHRA_API_KEY env var).")
+    parser.add_argument("--retries", type=int, default=3, help="HTTP retries. Default: 3.")
+    parser.add_argument("--base-url", default="https://unihra.ru", help="API base URL.")
     parser.add_argument("--results-dir", default=None, help="Directory to store results (overrides UNIHRA_RESULTS_DIR).")
     args = parser.parse_args()
 

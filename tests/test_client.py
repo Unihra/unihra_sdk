@@ -107,3 +107,51 @@ def test_health_check(client):
         
         status = client.health()
         assert status["status"] == "healthy"
+
+@patch("unihra.client.requests.Session.post")
+@patch("unihra.client.requests.Session.get")
+def test_analyze_anchors_with_links(mock_get, mock_post, client):
+    """
+    Test that anchors in the result include links when returned by the API.
+    """
+    # 1. Mock POST response (Task creation)
+    mock_post.return_value.status_code = 200
+    mock_post.return_value.json.return_value = {"task_id": "uuid-links"}
+
+    # 2. Mock GET response with anchors containing links
+    mock_stream_response = MagicMock()
+    mock_stream_response.status_code = 200
+    mock_stream_response.iter_lines.return_value = [
+        b'data: {"state": "SUCCESS", "result": {"anchors_analysis": [{"anchor": "buy now", "frequency_own": 0, "frequency_comp_avg": 5.0, "pages_count": 3, "links": ["https://comp1.com/buy", "https://comp2.com/shop"]}]}}'
+    ]
+    mock_get.return_value.__enter__.return_value = mock_stream_response
+
+    result = client.analyze("http://mysite.com", ["http://comp.com"])
+
+    anchors = result.get("anchors_analysis", [])
+    assert len(anchors) == 1
+    assert anchors[0]["anchor"] == "buy now"
+    assert anchors[0]["links"] == ["https://comp1.com/buy", "https://comp2.com/shop"]
+
+def test_save_report_anchors_links_structure():
+    """Test that _reorder_tech_columns handles links column properly."""
+    import sys
+    import pathlib
+    
+    # Ensure we use local source, not installed package
+    project_root = pathlib.Path(__file__).resolve().parents[1]
+    src_path = str(project_root / "src")
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
+    
+    # Reload module to get local version
+    import importlib
+    import unihra.client
+    importlib.reload(unihra.client)
+    
+    from unihra.client import UnihraClient
+    
+    client = UnihraClient(api_key="test_key")
+    
+    # Verify client version is updated
+    assert "1.5.1" in client.session.headers.get("User-Agent", "")

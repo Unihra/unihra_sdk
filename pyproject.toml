@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "unihra"
-version = "1.5.0"
+version = "1.5.1"
 description = "Official Python Client for Unihra API"
 authors = ["Unihra Team <dev@unihra.ru>"]
 readme = "README.md"
@@ -23,6 +23,10 @@ full = ["pandas", "openpyxl", "tqdm"]
 report = ["pandas", "openpyxl"]
 cli = ["tqdm", "pandas", "openpyxl"]
 mcp = ["mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.poetry.scripts]
 unihra = "unihra.__main__:main"

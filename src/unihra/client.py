@@ -41,7 +41,7 @@ class UnihraClient:
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "UnihraPythonSDK/1.5.0"
+            "User-Agent": "UnihraPythonSDK/1.5.1"
         })
 
         if max_retries > 0:
@@ -146,7 +146,7 @@ class UnihraClient:
         return last_event
 
     def _strip_id_recursively(self, obj: Any) -> Any:
-        """Рекурсивная очистка технических ID для экономии места и токенов."""
+        """Рекурсивная очистка технических ID из данных перед сохранением."""
         tech_keys = {"analysis_id", "task_id", "block_id", "id"}
         if isinstance(obj, dict):
             return {k: self._strip_id_recursively(v) for k, v in obj.items() if k not in tech_keys}
@@ -156,7 +156,7 @@ class UnihraClient:
 
     def analyze_and_save(self, **kwargs) -> Dict[str, Any]:
         """
-        Runs analysis, cleans IDs and splits result into local JSON files to avoid LLM context limits.
+        Runs analysis, cleans IDs and splits result into local JSON files.
         Returns a manifest with file paths and analysis ID.
         """
         result = self.analyze(**kwargs)
@@ -478,6 +478,12 @@ class UnihraClient:
                     except (ValueError, TypeError):
                         is_missing = True
                     worksheet.cell(row=row, column=a_idx).fill = red_fill if is_missing else green_fill
+
+            # Set wrap text for links column (can contain multiple URLs)
+            if 'links' in col_map:
+                idx = col_map['links']
+                for row in range(2, worksheet.max_row + 1):
+                    worksheet.cell(row=row, column=idx).alignment = Alignment(wrap_text=True)
 
         elif sheet_type == "gaps":
             if 'own_score' in col_map and 'lemma' in col_map:
