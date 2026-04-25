@@ -6,7 +6,17 @@ MCP server for the Unihra SEO & Semantic Analysis SDK.
 Overview
 --------
 Provides tools for AI assistants to run SEO analysis and retrieve results
-in focused sections (gaps, anchors, words, n-grams, vectors, page structure).
+in focused sections (gaps, anchors, words, n-grams, triplets, page structure).
+
+Two analysis modes
+------------------
+1. **Standard** (default, 1 credit) — lexicon, n-grams, anchors, zonal coverage.
+2. **Extended with triplets** (5 credits) — adds a Knowledge Graph
+   (subject → predicate → object) extracted from competitor texts and a
+   prioritised list of topical gaps (critical / important / unique).
+
+The model decides which mode to request via the `triplet_analysis` flag
+on `unihra_analyze`. See that tool's description for selection guidance.
 
 Storage
 -------
@@ -82,15 +92,22 @@ def _results_dir() -> Path:
     return d
 
 
-def _save_result(result: dict, own_page: str, competitors: List[str]) -> str:
+def _save_result(
+    result: dict,
+    own_page: str,
+    competitors: List[str],
+    triplet_analysis: bool,
+) -> str:
     """Save analysis result to disk, return result_id."""
     result_id = uuid.uuid4().hex[:12]
     payload = {
-        "result_id":   result_id,
-        "saved_at":    datetime.utcnow().isoformat(),
-        "own_page":    own_page,
-        "competitors": competitors,
-        "data":        result,
+        "result_id":        result_id,
+        "saved_at":         datetime.utcnow().isoformat(),
+        "own_page":         own_page,
+        "competitors":      competitors,
+        "triplet_analysis": bool(triplet_analysis),
+        "credits_spent":    5 if triplet_analysis else 1,
+        "data":             result,
     }
     path = _results_dir() / f"{result_id}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -131,7 +148,13 @@ def _norm_action(raw: str) -> str:
     return _ACTION_MAP.get(raw, raw).lower()
 
 
-def _build_summary(result: dict, result_id: str, own_page: str, competitors: List[str]) -> dict:
+def _build_summary(
+    result: dict,
+    result_id: str,
+    own_page: str,
+    competitors: List[str],
+    triplet_analysis: bool,
+) -> dict:
     """
     Compact summary returned immediately after analysis.
     Used to decide which unihra_get_* tools to call next.
@@ -139,7 +162,7 @@ def _build_summary(result: dict, result_id: str, own_page: str, competitors: Lis
     gaps    = result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or []
     blocks  = result.get("block_comparison") or []
     ngrams  = result.get("ngrams_analysis") or result.get("n_grams_analysis") or []
-    drmaxs  = result.get("drmaxs") or {}
+    triplets = result.get("triplets_analysis") or {}
     struct  = result.get("page_structure") or []
     anchors = result.get("anchors_analysis") or []
 
@@ -174,17 +197,20 @@ def _build_summary(result: dict, result_id: str, own_page: str, competitors: Lis
         "heading_structure":  (own_struct.get("content") or {}).get("heading_structure_raw"),
     }
 
-    return {
-        "result_id":    result_id,
-        "own_page":     own_page,
-        "competitors":  competitors,
+    summary: Dict[str, Any] = {
+        "result_id":        result_id,
+        "own_page":         own_page,
+        "competitors":      competitors,
+        "triplet_analysis": bool(triplet_analysis),
+        "credits_spent":    5 if triplet_analysis else 1,
         "data_blocks":  {
             "page_structure":            len(struct),
             "semantic_context_analysis": len(gaps),
             "block_comparison":          len(blocks),
             "ngrams_analysis":           len(ngrams),
             "anchors_analysis":          len(anchors),
-            "drmaxs_sections":           list(drmaxs.keys()),
+            "triplets_entities":         len((triplets.get("entities") or [])),
+            "triplets_gaps_total":       int((triplets.get("stats") or {}).get("gaps_total") or 0),
         },
         "own_page_snapshot": own_snap,
         "top5_priority_gaps": [
@@ -215,12 +241,41 @@ def _build_summary(result: dict, result_id: str, own_page: str, competitors: Lis
             }
             for a in top_anchors
         ],
-        "next_steps": (
-            "Use result_id with unihra_get_gaps, unihra_get_anchors, unihra_get_vectors, "
-            "unihra_get_word_actions, unihra_get_ngrams, or unihra_get_page_structure "
-            "to retrieve detailed data slices as needed."
-        ),
     }
+
+    # Surface triplet headline numbers + a tier breakdown of entities,
+    # so the model can decide whether to call unihra_get_triplets.
+    if triplet_analysis and triplets:
+        stats = triplets.get("stats") or {}
+        entities = triplets.get("entities") or []
+        tier_counts: Dict[str, int] = {}
+        for ent in entities:
+            t = (ent.get("tier") or "unknown").lower()
+            tier_counts[t] = tier_counts.get(t, 0) + 1
+
+        summary["triplets_summary"] = {
+            "total_triplets":       stats.get("total_triplets"),
+            "sources_with_content": stats.get("sources_with_content"),
+            "gaps_total":           stats.get("gaps_total"),
+            "gaps_critical":        stats.get("gaps_critical"),
+            "gaps_important":       stats.get("gaps_important"),
+            "gaps_unique":          stats.get("gaps_unique"),
+            "entities_by_tier":     tier_counts,
+        }
+
+    summary["next_steps"] = (
+        "Use result_id with unihra_get_gaps, unihra_get_anchors, "
+        "unihra_get_word_actions, unihra_get_ngrams, or unihra_get_page_structure "
+        "to retrieve detailed data slices as needed."
+        + (
+            " Knowledge Graph: call unihra_get_triplets for entity-level facts "
+            "or to enumerate critical/important content gaps."
+            if triplet_analysis else
+            " Triplets are NOT available in this result (standard analysis). "
+            "Re-run unihra_analyze with triplet_analysis=true if you need a Knowledge Graph."
+        )
+    )
+    return summary
 
 
 def build_server(client: UnihraClient) -> Server:
@@ -246,12 +301,26 @@ def build_server(client: UnihraClient) -> Server:
                     "  • 'Find semantic gaps / missing words on my page'\n"
                     "  • 'Do an SEO / content audit of URL X vs URL Y'\n"
                     "  • 'What should I write in Title / H1 / H2?'\n"
-                    "  • 'Which LSI / semantic / vector words are missing from my page?'\n"
+                    "  • 'What facts / topics / entities are competitors covering that I miss?'\n"
                     "  • Any task involving comparing text content of two or more URLs\n\n"
                     "DO NOT fetch or parse pages yourself — the tool handles everything server-side.\n\n"
+                    "── ANALYSIS MODE (cost-aware, the model picks one) ──\n"
+                    "Set triplet_analysis = false  → STANDARD, 1 credit.\n"
+                    "  Lexicon, n-grams, anchors, zonal context. Use for the vast majority of\n"
+                    "  requests: keyword gaps, density tweaks, heading review, anchor coverage.\n\n"
+                    "Set triplet_analysis = true   → EXTENDED, 5 credits.\n"
+                    "  Adds a Knowledge Graph: subject → predicate → object facts mined from\n"
+                    "  competitor texts, plus a prioritised list of topical gaps\n"
+                    "  (critical / important / unique). Use ONLY when the user explicitly asks for:\n"
+                    "    • a content brief / topical outline / E-E-A-T / fact-coverage audit\n"
+                    "    • 'what facts / properties / specs / entities am I missing'\n"
+                    "    • a deep semantic / knowledge-graph analysis\n"
+                    "    • compliance / completeness review of attributes a page must cover\n"
+                    "  Default to false unless the user signals one of the above.\n"
+                    "  If unsure and the user has not approved the higher cost, prefer false.\n\n"
                     "RESPONSE: Returns a result_id and a compact summary.\n"
                     "Use result_id with unihra_get_* tools to retrieve specific data slices.\n\n"
-                    "Takes 30–120 seconds depending on page count and size."
+                    "Takes 30–120 seconds (longer with triplet_analysis = true)."
                 ),
                 inputSchema={
                     "type": "object",
@@ -263,7 +332,7 @@ def build_server(client: UnihraClient) -> Server:
                         "competitors": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Competitor page URLs. 3-10 recommended for statistical reliability.",
+                            "description": "Competitor page URLs. 3-10 recommended for statistical reliability. Hard limit: 20.",
                         },
                         "queries": {
                             "type": "array",
@@ -271,7 +340,7 @@ def build_server(client: UnihraClient) -> Server:
                             "description": (
                                 "Target search queries the page should rank for. "
                                 "REQUIRED for zone recommendations (Add to Title/H1, Add to H2/H3 ...). "
-                                "Example: ['купить шланг', 'шланг высокого давления цена']"
+                                "Up to 5 queries. Example: ['купить шланг', 'шланг высокого давления цена']"
                             ),
                         },
                         "lang": {
@@ -287,6 +356,16 @@ def build_server(client: UnihraClient) -> Server:
                                 "Example: {\"https://example.com/page\": \"session=abc123\"}"
                             ),
                         },
+                        "triplet_analysis": {
+                            "type": "boolean",
+                            "description": (
+                                "Enable Knowledge Graph extraction. Cost: 5 credits "
+                                "(standard analysis costs 1 credit). Default: false. "
+                                "Set true ONLY for explicit fact-coverage / topical-brief / "
+                                "knowledge-graph requests — see tool description."
+                            ),
+                            "default": False,
+                        },
                     },
                     "required": ["own_page", "competitors"],
                 },
@@ -295,7 +374,7 @@ def build_server(client: UnihraClient) -> Server:
                 name="unihra_list_results",
                 description=(
                     "List all saved analysis results.\n"
-                    "Returns result_id, own_page, competitors, and saved_at for each result.\n"
+                    "Returns result_id, own_page, competitors, triplet_analysis flag, and saved_at for each result.\n"
                     "Use to find a result_id for a previously analysed page."
                 ),
                 inputSchema={"type": "object", "properties": {}, "required": []},
@@ -408,42 +487,55 @@ def build_server(client: UnihraClient) -> Server:
                 },
             ),
             mcp_types.Tool(
-                name="unihra_get_vectors",
+                name="unihra_get_triplets",
                 description=(
-                    "Get Vector AI / LSI semantic words from a saved analysis.\n\n"
-                    "DrMaxs uses neural embeddings to find words that are topically relevant "
-                    "even if not used directly by competitors — latent semantic vocabulary.\n\n"
-                    "Sections: by_tfidf (most unique signal), by_frequency, by_sites_count.\n"
-                    "Sorted by similarity_score desc. Ranking is meaningful; "
-                    "absolute score values are not (embedding scale varies by topic).\n\n"
-                    "Use to expand content vocabulary beyond what competitors explicitly use."
+                    "Get the Knowledge Graph (subject → predicate → object facts) from a saved analysis.\n\n"
+                    "AVAILABLE ONLY when unihra_analyze was called with triplet_analysis=true (5 credits).\n"
+                    "If the saved result is from a standard analysis, this tool returns an explanatory error.\n\n"
+                    "Two views are returned in the same call:\n"
+                    "  1. entities[] — for each subject: tier (core/main/additional/unique), "
+                    "triplets_count, sources_count, and the list of (predicate, object, sources) facts.\n"
+                    "  2. gaps{} — subjects ABSENT from your page, grouped by frequency across competitor sources:\n"
+                    "      • critical  — topic appears on 3+ competitor sites\n"
+                    "      • important — topic appears on 2 competitor sites\n"
+                    "      • unique    — topic appears on 1 competitor site\n\n"
+                    "Use to build a fact-level content brief: which entities and properties "
+                    "competitors describe that your page is missing, and which sources back each claim."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "result_id": {"type": "string", "description": "From unihra_analyze."},
-                        "top_n": {
+                        "result_id": {"type": "string", "description": "From unihra_analyze (triplet_analysis=true)."},
+                        "view": {
+                            "type": "string",
+                            "enum": ["entities", "gaps", "both"],
+                            "description": "Which view to return. Default 'both'.",
+                            "default": "both",
+                        },
+                        "top_entities": {
                             "type": "integer",
-                            "description": "Max words per section. Default 40.",
-                            "default": 40,
+                            "description": "Max entities to return (sorted by sources_count desc). Default 30.",
+                            "default": 30,
                         },
-                        "missing_only": {
-                            "type": "boolean",
-                            "description": "Only words NOT on own page. Default true.",
-                            "default": True,
+                        "max_triplets_per_entity": {
+                            "type": "integer",
+                            "description": "Max facts per entity. Default 12.",
+                            "default": 12,
                         },
-                        "sections": {
+                        "tiers": {
                             "type": "array",
-                            "items": {"type": "string", "enum": ["by_tfidf", "by_frequency", "by_sites_count"]},
-                            "description": "Which sections to return. Default: ['by_tfidf', 'by_frequency'].",
+                            "items": {"type": "string", "enum": ["core", "main", "additional", "unique"]},
+                            "description": "Filter entities by tier. Default: ['core', 'main'] (high-signal entities).",
                         },
-                        "dedupe_with_gaps": {
-                            "type": "boolean",
-                            "description": (
-                                "Exclude words already in semantic_context_analysis. "
-                                "Default true — avoids showing the same word twice."
-                            ),
-                            "default": True,
+                        "gap_severities": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": ["critical", "important", "unique"]},
+                            "description": "Which gap groups to include. Default: ['critical', 'important'].",
+                        },
+                        "max_gaps_per_severity": {
+                            "type": "integer",
+                            "description": "Max gap items per severity bucket. Default 25.",
+                            "default": 25,
                         },
                     },
                     "required": ["result_id"],
@@ -544,6 +636,7 @@ def build_server(client: UnihraClient) -> Server:
                 _require(arguments, "own_page", "competitors")
                 own_page = arguments["own_page"]
                 competitors = arguments["competitors"]
+                triplet_analysis = bool(arguments.get("triplet_analysis", False))
 
                 raw = client.analyze(
                     own_page=own_page,
@@ -551,11 +644,12 @@ def build_server(client: UnihraClient) -> Server:
                     queries=arguments.get("queries"),
                     lang=arguments.get("lang", "ru"),
                     url_cookies=arguments.get("url_cookies"),
+                    triplet_analysis=triplet_analysis,
                     verbose=False,
                 )
 
-                result_id = _save_result(raw, own_page, competitors)
-                summary = _build_summary(raw, result_id, own_page, competitors)
+                result_id = _save_result(raw, own_page, competitors, triplet_analysis)
+                summary = _build_summary(raw, result_id, own_page, competitors, triplet_analysis)
                 return _ok(summary)
 
             elif name == "unihra_list_results":
@@ -564,11 +658,13 @@ def build_server(client: UnihraClient) -> Server:
                     try:
                         meta = json.loads(p.read_text(encoding="utf-8"))
                         items.append({
-                            "result_id":   meta.get("result_id", p.stem),
-                            "own_page":    meta.get("own_page"),
-                            "competitors": meta.get("competitors"),
-                            "saved_at":    meta.get("saved_at"),
-                            "file_kb":     round(p.stat().st_size / 1024, 1),
+                            "result_id":        meta.get("result_id", p.stem),
+                            "own_page":         meta.get("own_page"),
+                            "competitors":      meta.get("competitors"),
+                            "triplet_analysis": meta.get("triplet_analysis", False),
+                            "credits_spent":    meta.get("credits_spent"),
+                            "saved_at":         meta.get("saved_at"),
+                            "file_kb":          round(p.stat().st_size / 1024, 1),
                         })
                     except Exception:
                         continue
@@ -669,47 +765,75 @@ def build_server(client: UnihraClient) -> Server:
                     "anchors":            filtered[:top_n],
                 })
 
-            elif name == "unihra_get_vectors":
+            elif name == "unihra_get_triplets":
                 _require(arguments, "result_id")
                 data = _load_result(arguments["result_id"])
-                top_n = int(arguments.get("top_n", 40))
-                missing_only = bool(arguments.get("missing_only", True))
-                sections_req = arguments.get("sections") or ["by_tfidf", "by_frequency"]
-                dedupe_gaps = bool(arguments.get("dedupe_with_gaps", True))
+                meta = _load_meta(arguments["result_id"])
 
-                drmaxs = data.get("drmaxs") or {}
+                view = arguments.get("view", "both")
+                top_entities = int(arguments.get("top_entities", 30))
+                max_per_entity = int(arguments.get("max_triplets_per_entity", 12))
+                tiers_filter = arguments.get("tiers") or ["core", "main"]
+                gap_severities = arguments.get("gap_severities") or ["critical", "important"]
+                max_gaps_per_sev = int(arguments.get("max_gaps_per_severity", 25))
 
-                exclude: Set[str] = set()
-                if dedupe_gaps:
-                    gaps_raw = data.get("semantic_context_analysis") or data.get("semantic_context_gaps") or []
-                    exclude = {(g.get("lemma") or "").lower() for g in gaps_raw if g.get("lemma")}
+                triplets_block = data.get("triplets_analysis") or {}
+                if not triplets_block and not meta.get("triplet_analysis"):
+                    return _err(
+                        "This result was created with standard analysis (triplet_analysis=false). "
+                        "Re-run unihra_analyze with triplet_analysis=true (cost: 5 credits) "
+                        "to obtain a Knowledge Graph."
+                    )
 
-                seen: Set[str] = set()
-                output: Dict[str, list] = {}
+                response: Dict[str, Any] = {
+                    "result_id":        arguments["result_id"],
+                    "view":             view,
+                    "stats":            triplets_block.get("stats") or {},
+                }
 
-                for key in sections_req:
-                    items = drmaxs.get(key)
-                    if not isinstance(items, list):
-                        continue
-                    result_items = []
-                    for item in items:
-                        word = (item.get("word") or "").lower()
-                        if not word or word in seen or word in exclude:
-                            continue
-                        if missing_only and item.get("present_on_own_page", False):
-                            continue
-                        result_items.append(_strip_junk(item))
-                        seen.add(word)
+                if view in ("entities", "both"):
+                    entities = triplets_block.get("entities") or []
+                    tier_set = {t.lower() for t in tiers_filter}
+                    filtered_entities = [
+                        ent for ent in entities
+                        if (ent.get("tier") or "").lower() in tier_set
+                    ]
+                    # Highest signal first: more sources → broader confirmation
+                    filtered_entities.sort(
+                        key=lambda x: (x.get("sources_count", 0), x.get("triplets_count", 0)),
+                        reverse=True,
+                    )
 
-                    result_items.sort(key=lambda x: x.get("similarity_score", 0), reverse=True)
-                    output[key] = result_items[:top_n]
+                    out_entities = []
+                    for ent in filtered_entities[:top_entities]:
+                        cleaned = _strip_junk(ent)
+                        triplets_list = cleaned.get("triplets") or []
+                        cleaned["triplets"] = triplets_list[:max_per_entity]
+                        out_entities.append(cleaned)
 
-                return _ok({
-                    "result_id":            arguments["result_id"],
-                    "sections_returned":    list(output.keys()),
-                    "deduped_against_gaps": len(exclude) if dedupe_gaps else 0,
-                    "sections":             output,
-                })
+                    response["entities"] = out_entities
+                    response["entities_returned"] = len(out_entities)
+                    response["entities_total_after_tier_filter"] = len(filtered_entities)
+                    response["filters_entities"] = {
+                        "tiers":                  tiers_filter,
+                        "top_entities":           top_entities,
+                        "max_triplets_per_entity": max_per_entity,
+                    }
+
+                if view in ("gaps", "both"):
+                    gaps_block = triplets_block.get("gaps") or {}
+                    out_gaps: Dict[str, list] = {}
+                    for sev in gap_severities:
+                        items = gaps_block.get(sev) or []
+                        out_gaps[sev] = [_strip_junk(i) for i in items[:max_gaps_per_sev]]
+
+                    response["gaps"] = out_gaps
+                    response["filters_gaps"] = {
+                        "gap_severities":         gap_severities,
+                        "max_gaps_per_severity":  max_gaps_per_sev,
+                    }
+
+                return _ok(response)
 
             elif name == "unihra_get_word_actions":
                 _require(arguments, "result_id")

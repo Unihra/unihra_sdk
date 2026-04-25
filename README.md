@@ -35,13 +35,15 @@ English · [Русский](docs/README.ru.md)
 - **Page structure** — headings, meta tags, and content metrics for your URL and each competitor URL.
 - **Word comparison (TF‑IDF)** — suggested actions per term (add, increase, decrease, ok).
 - **Phrases (n‑grams)** — recurring phrases across competitor pages.
-- **Vector / LSI terms (DrMaxs)** — semantically related vocabulary for the topic.
+- **Knowledge Graph (triplets)** — extended mode that mines `subject → predicate → object` facts from competitor texts and surfaces topical gaps (critical / important / unique).
 - **Anchors (link texts)** — identify missing internal and external link texts used by competitors to rank.
 - **Cookies** — optional per‑URL cookie strings for pages behind login or gates.
 - **Streaming** — the client handles the live analysis stream and waits for completion.
 - **Retries** — optional HTTP retries with backoff for unstable networks.
 - **Reports** — export multi‑sheet Excel reports with formatting (optional dependencies).
 - **Progress** — optional progress bar in notebooks when `tqdm` is installed.
+
+> 💳 **Cost model.** Standard analysis = **1 credit** per call. Extended analysis with `triplet_analysis=true` (Knowledge Graph) = **5 credits** per call. The default is the cheap path.
 
 ---
 
@@ -85,6 +87,7 @@ result = client.analyze(
     url_cookies={
         "https://example.com/my-product": "session_id=abc123; auth=true",
     },
+    triplet_analysis=False,  # set True for the Knowledge Graph (5 credits)
     verbose=True,
 )
 
@@ -96,9 +99,26 @@ for p in pages:
     print(p["url"], "—", p["meta_tags"]["title"])
 ```
 
+To enable the **Knowledge Graph** (extended fact‑coverage analysis):
+
+```python
+result = client.analyze(
+    own_page="https://example.com/my-product",
+    competitors=["https://competitor.com/top-product"],
+    queries=["buy widget"],
+    lang="en",
+    triplet_analysis=True,   # 5 credits — adds knowledge graph + topical gaps
+    verbose=True,
+)
+
+triplets = result.get("triplets_analysis", {})
+print("Total facts:", triplets.get("stats", {}).get("total_triplets"))
+print("Critical topical gaps:", len(triplets.get("gaps", {}).get("critical", [])))
+```
+
 ### 2. Save an Excel report
 
-Sheet names typically include *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N‑Grams*, *Anchors*, and vector sections.
+Sheet names typically include *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N‑Grams*, *Anchors*, and — when `triplet_analysis=True` — *Triplets* and *Triplets Gaps*.
 
 ```python
 client.save_report(result, "seo_report.xlsx")
@@ -178,15 +198,36 @@ Phrases (bigrams / trigrams) and how many competitor pages contain them.
 </details>
 
 <details>
-<summary><b>5. DrMaxs (vector / LSI)</b></summary>
+<summary><b>5. Triplets — Knowledge Graph (extended mode, 5 credits)</b></summary>
 
-Semantic neighbours of the topic, grouped (e.g. `by_frequency`, `by_tfidf`), with `similarity_score` and whether the word appears on your page.
+Available only when `triplet_analysis=True`. Extracts **subject → predicate → object** facts from competitor texts and groups topical gaps by how many competitor sources cover them.
+
+- `entities[]` — for each subject:
+  - `tier` — importance bucket: `core` → `main` → `additional` → `unique`
+  - `triplets_count`, `sources_count`
+  - `triplets[]` — list of `{predicate, object, sources[]}` claims
+- `gaps` — subjects **absent from your page**, grouped by source coverage:
+  - `critical` — appears on **3+** competitor sites
+  - `important` — appears on **2** competitor sites
+  - `unique` — appears on **1** competitor site
+- `stats` — `total_triplets`, `sources_with_content`, per‑severity gap counts, `gaps_total`, `batches`.
 
 ```json
 {
-  "word": "logistics",
-  "similarity_score": 0.89,
-  "present_on_own_page": false
+  "entities": [
+    {
+      "subject": "Mineral Wool",
+      "tier": "core",
+      "triplets_count": 14,
+      "sources_count": 7,
+      "triplets": [
+        {"predicate": "operating temperature", "object": "up to 700°C",
+         "sources": ["comp1.com", "comp4.com"]}
+      ]
+    }
+  ],
+  "gaps": {"critical": [...], "important": [...], "unique": [...]},
+  "stats": {"total_triplets": 412, "gaps_total": 74}
 }
 ```
 
@@ -230,6 +271,7 @@ python -m unihra \
   --comp "https://comp2.com" \
   --query "main keyword" \
   --cookies "session=secret_123" \
+  --triplets \
   --save report.xlsx \
   --verbose
 ```
@@ -241,6 +283,7 @@ python -m unihra \
 | `--query` | Target query (repeatable; recommended) |
 | `--lang` | `ru` or `en` (default `ru`) |
 | `--cookies` | Cookie string for your own page |
+| `--triplets` | Enable Knowledge Graph extraction (cost: 5 credits instead of 1) |
 | `--save` | Write `.xlsx` or `.csv` report |
 | `--retries` | HTTP retry count |
 | `--verbose` | Show progress |
@@ -260,20 +303,22 @@ The optional **MCP server** lets compatible assistants call Unihra as **tools** 
 3. Start: `python -m unihra.mcp_server` or the command `unihra-mcp`.
 4. Point your client’s MCP settings at that Python and module (see below).
 
-**How it works:** The `unihra_analyze` tool runs the full analysis and saves the result locally, returning only a `result_id` and a compact summary. You then use `unihra_get_*` tools with the `result_id` to retrieve specific data sections on demand — gaps, anchors, words, n-grams, vectors, or page structure. This lets you explore the full report section by section.
+**How it works:** The `unihra_analyze` tool runs the full analysis and saves the result locally, returning only a `result_id` and a compact summary. You then use `unihra_get_*` tools with the `result_id` to retrieve specific data sections on demand — gaps, anchors, words, n‑grams, triplets (Knowledge Graph), or page structure. This lets you explore the full report section by section.
+
+**Cost-aware mode selection.** `unihra_analyze` accepts a `triplet_analysis` boolean. The tool description tells the model to default to `false` (1 credit, standard analysis) and only set it to `true` (5 credits, Knowledge Graph) when the user explicitly asks for fact‑coverage / topical brief / entity audit.
 
 **Available tools:**
 
 | Tool | Purpose |
 |------|---------|
 | `unihra_health` | Check that the service is reachable |
-| `unihra_analyze` | Primary tool: runs full analysis, saves to disk, returns `result_id` + summary |
+| `unihra_analyze` | Primary tool: runs full analysis, saves to disk, returns `result_id` + summary. `triplet_analysis=true` enables the Knowledge Graph (5 credits) |
 | `unihra_list_results` | List all saved analysis results on disk |
 | `unihra_delete_result` | Delete a saved analysis result by `result_id` |
 | `unihra_get_page_structure` | Fetch heading/meta report for a `result_id` |
 | `unihra_get_gaps` | Get semantic gaps and zone recommendations from a `result_id` |
 | `unihra_get_anchors` | Get anchor text (link texts) analysis from a `result_id` |
-| `unihra_get_vectors` | LSI / vector terms from a `result_id` |
+| `unihra_get_triplets` | Get Knowledge Graph entities and topical gaps (only for results created with `triplet_analysis=true`) |
 | `unihra_get_word_actions` | TF‑IDF words grouped by action |
 | `unihra_get_ngrams` | Phrase list from a `result_id` |
 

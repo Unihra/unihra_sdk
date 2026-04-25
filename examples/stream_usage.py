@@ -6,7 +6,12 @@ client = UnihraClient(API_KEY)
 
 print("Анализ с прогрессом:")
 try:
-    for event in client.analyze_stream("https://site.com", ["https://comp.com"]):
+    # triplet_analysis=True включит расширенный Граф знаний (5 кредитов).
+    for event in client.analyze_stream(
+        "https://site.com",
+        ["https://comp.com"],
+        triplet_analysis=False,
+    ):
         state = event.get('state')
         print(f"\rТекущий статус: {state}", end="")
         sys.stdout.flush()

@@ -1,19 +1,21 @@
 from .client import UnihraClient
 from .exceptions import (
-    UnihraError, 
-    UnihraApiError, 
-    UnihraValidationError, 
+    UnihraError,
+    UnihraApiError,
+    UnihraValidationError,
     UnihraConnectionError,
     ParserError,
-    CriticalOwnPageError
+    CriticalOwnPageError,
+    TripletAnalysisError
 )
 
 __all__ = [
-    "UnihraClient", 
-    "UnihraError", 
-    "UnihraApiError", 
-    "UnihraValidationError", 
+    "UnihraClient",
+    "UnihraError",
+    "UnihraApiError",
+    "UnihraValidationError",
     "UnihraConnectionError",
     "ParserError",
-    "CriticalOwnPageError"
+    "CriticalOwnPageError",
+    "TripletAnalysisError"
 ]

@@ -13,7 +13,7 @@ except ImportError:
     TQDM_AVAILABLE = False
 
 from .exceptions import (
-    UnihraError, UnihraApiError, UnihraConnectionError, 
+    UnihraError, UnihraApiError, UnihraConnectionError,
     UnihraValidationError, UnihraDependencyError, UnihraStorageError, raise_for_error_code
 )
 
@@ -37,11 +37,11 @@ class UnihraClient:
         self.api_v1 = f"{self.base_url}/api/v1"
         self.storage_path = Path(storage_dir)
         self.session = requests.Session()
-        
+
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "UnihraPythonSDK/1.5.1"
+            "User-Agent": "UnihraPythonSDK/1.6.0"
         })
 
         if max_retries > 0:
@@ -72,7 +72,7 @@ class UnihraClient:
             resp = self.session.get(f"{self.api_v1}/report/structure/{task_id}")
             resp.raise_for_status()
             data = resp.json()
-            
+
             # API returns a List of objects. Normalize each one.
             if isinstance(data, list):
                 return[self._normalize_keys(item) for item in data]
@@ -81,45 +81,48 @@ class UnihraClient:
             return[]
 
     def analyze(
-        self, 
-        own_page: str, 
+        self,
+        own_page: str,
         competitors: List[str],
         queries: Optional[List[str]] = None,
         lang: Literal['ru', 'en'] = 'ru',
         url_cookies: Optional[Dict[str, str]] = None,
+        triplet_analysis: bool = False,
         verbose: bool = False
     ) -> Dict[str, Any]:
         """
         Start a full analysis task and wait for completion.
-        
+
         :param own_page: URL of your landing page.
         :param competitors: List of competitor URLs.
         :param queries: List of target keywords.
         :param lang: 'ru' or 'en'.
         :param url_cookies: Dictionary mapping URL -> Cookie String.
+        :param triplet_analysis: Enable extended Knowledge Graph extraction (5 credits vs 1).
         :param verbose: If True, displays a progress bar.
         """
         last_event = {}
         pbar = None
-        
+
         if verbose:
             if TQDM_AVAILABLE:
-                pbar = tqdm(total=100, desc="Analyzing SEO", unit="%")
+                desc = "Analyzing SEO (+ Triplets)" if triplet_analysis else "Analyzing SEO"
+                pbar = tqdm(total=100, desc=desc, unit="%")
             else:
                 print("Note: Install 'tqdm' to see a visual progress bar.")
 
         try:
-            for event in self.analyze_stream(own_page, competitors, queries, lang, url_cookies):
+            for event in self.analyze_stream(own_page, competitors, queries, lang, url_cookies, triplet_analysis):
                 last_event = event
-                
+
                 if pbar:
                     state = event.get("state")
                     progress = event.get("progress", 0)
-                    
+
                     if isinstance(progress, (int, float)):
                         pbar.n = int(progress)
                         pbar.refresh()
-                    
+
                     if state in ["PROCESSING", "PROGRESS"]:
                         msg = "Processing"
                         details = event.get("details", {})
@@ -133,16 +136,16 @@ class UnihraClient:
 
                 if event.get("state") == "SUCCESS":
                     return event.get("result", {})
-                    
+
         except Exception as e:
-            if pbar: 
+            if pbar:
                 pbar.set_description("Failed ❌")
                 pbar.close()
             raise e
         finally:
-            if pbar: 
+            if pbar:
                 pbar.close()
-        
+
         return last_event
 
     def _strip_id_recursively(self, obj: Any) -> Any:
@@ -161,7 +164,7 @@ class UnihraClient:
         """
         result = self.analyze(**kwargs)
         analysis_id = result.get("_meta", {}).get("task_id", "unknown")
-        
+
         target_dir = self.storage_path / analysis_id
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -176,82 +179,88 @@ class UnihraClient:
             "words": "block_comparison",
             "ngrams": "ngrams_analysis",
             "anchors": "anchors_analysis",
-            "vectors": "drmaxs",
+            "triplets": "triplets_analysis",
             "structure": "page_structure"
         }
 
         try:
             for file_key, data_key in segments.items():
-                data = result.get(data_key,[])
-                
+                data = result.get(data_key, [] if data_key != "triplets_analysis" else {})
+
                 # Применяем очистку перед сохранением
                 cleaned_data = self._strip_id_recursively(data)
-                
+
                 file_path = target_dir / f"{file_key}.json"
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(cleaned_data, f, ensure_ascii=False, indent=2)
                 manifest["files"][file_key] = str(file_path.absolute())
-            
+
             return manifest
         except Exception as e:
             raise UnihraStorageError(f"Failed to save analysis segments: {e}")
 
     def analyze_stream(
-        self, 
-        own_page: str, 
+        self,
+        own_page: str,
         competitors: List[str],
         queries: Optional[List[str]] = None,
         lang: str = 'ru',
-        url_cookies: Optional[Dict[str, str]] = None
+        url_cookies: Optional[Dict[str, str]] = None,
+        triplet_analysis: bool = False
     ) -> Generator[Dict, None, None]:
         if not competitors:
             raise UnihraValidationError("Competitor list cannot be empty.")
 
         payload = {
-            "own_page": own_page, 
+            "own_page": own_page,
             "competitor_urls": competitors,
             "queries": queries or[],
             "lang": lang,
-            "url_cookies": url_cookies or {}
+            "url_cookies": url_cookies or {},
+            "triplet_analysis": bool(triplet_analysis)
         }
 
         try:
             resp = self.session.post(f"{self.api_v1}/process", json=payload)
-            
+
             if resp.status_code == 401:
                 raise UnihraApiError("Invalid API Key or unauthorized access", code=401)
             resp.raise_for_status()
-            
+
             task_id = resp.json().get("task_id")
             if not task_id:
                 raise UnihraApiError("API response missing 'task_id'")
 
             stream_url = f"{self.api_v1}/process/status/{task_id}"
-            
+
             with self.session.get(stream_url, stream=True) as s_resp:
                 s_resp.raise_for_status()
-                
+
                 for line in s_resp.iter_lines():
-                    if not line: 
+                    if not line:
                         continue
-                    
+
                     if line.startswith(b'data: '):
                         try:
                             decoded_line = line[6:].decode('utf-8')
                             data = json.loads(decoded_line)
                             state = data.get("state")
-                            
+
                             if state == "FAILURE":
                                 error_obj = data.get("error")
                                 code = error_obj.get("code", 9999) if isinstance(error_obj, dict) else 9999
                                 msg = error_obj.get("message", "Unknown error") if isinstance(error_obj, dict) else "Unknown error"
                                 raise_for_error_code(code, msg, data)
-                            
+
                             if state == "SUCCESS":
                                 raw_result = data.get("result", {})
                                 normalized_result = self._normalize_keys(raw_result)
-                                normalized_result["_meta"] = {"task_id": task_id}
-                                
+                                normalized_result["_meta"] = {
+                                    "task_id": task_id,
+                                    "triplet_analysis": bool(triplet_analysis),
+                                    "credits_spent": 5 if triplet_analysis else 1,
+                                }
+
                                 if lang == 'en':
                                     final_result = self._translate_action_values(normalized_result)
                                 else:
@@ -265,21 +274,21 @@ class UnihraClient:
                                 data["result"] = final_result
                                 yield data
                                 break
-                            
+
                             yield data
-                                
+
                         except json.JSONDecodeError:
                             continue
-                            
+
         except requests.exceptions.RetryError:
             raise UnihraConnectionError("Max retries exceeded. The service might be temporarily unavailable.")
         except requests.exceptions.RequestException as e:
             raise UnihraConnectionError(f"Network error: {e}")
-        
+
     def _normalize_keys(self, data: Any) -> Any:
         if isinstance(data, dict):
             return {
-                k.lower().replace(" ", "_").replace("-", "_"): self._normalize_keys(v) 
+                k.lower().replace(" ", "_").replace("-", "_"): self._normalize_keys(v)
                 for k, v in data.items()
             }
         elif isinstance(data, list):
@@ -306,9 +315,44 @@ class UnihraClient:
             flat_rows.append(flat_item)
         return flat_rows
 
+    def _flatten_triplets_entities(self, entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Flatten knowledge-graph entities into one row per triplet for tabular view."""
+        flat_rows = []
+        for ent in entities or []:
+            subject = ent.get("subject")
+            tier = ent.get("tier")
+            sources_count = ent.get("sources_count")
+            triplets_count = ent.get("triplets_count")
+            for tr in ent.get("triplets") or []:
+                flat_rows.append({
+                    "subject":         subject,
+                    "tier":            tier,
+                    "predicate":       tr.get("predicate"),
+                    "object":          tr.get("object"),
+                    "sources":         ", ".join(tr.get("sources") or []),
+                    "sources_count":   sources_count,
+                    "triplets_count":  triplets_count,
+                })
+        return flat_rows
+
+    def _flatten_triplets_gaps(self, gaps: Dict[str, List[Any]]) -> List[Dict[str, Any]]:
+        """Flatten gap subjects (critical / important / unique) into a single table."""
+        flat_rows = []
+        for severity in ("critical", "important", "unique"):
+            for item in (gaps or {}).get(severity) or []:
+                if isinstance(item, dict):
+                    row = {"severity": severity}
+                    row.update(item)
+                else:
+                    row = {"severity": severity, "subject": item}
+                flat_rows.append(row)
+        return flat_rows
+
     def get_dataframe(self, result: Dict[str, Any], section: str = "block_comparison"):
         """
         Convert a specific section of the result into a Pandas DataFrame.
+        Supported sections: block_comparison, ngrams_analysis, semantic_context_analysis,
+        anchors_analysis, page_structure, triplets_analysis, triplets_gaps.
         """
         try:
             import pandas as pd
@@ -316,12 +360,22 @@ class UnihraClient:
             raise UnihraDependencyError("Pandas is not installed. Run: pip install unihra[full]")
 
         normalized_section = section.lower().replace(" ", "_").replace("-", "_")
-        
+
         if normalized_section == "page_structure":
             data = result.get("page_structure",[])
             if not data:
                 return pd.DataFrame()
             flat_list = self._flatten_structure_list(data)
+            return pd.DataFrame(flat_list)
+
+        if normalized_section == "triplets_analysis":
+            entities = (result.get("triplets_analysis") or {}).get("entities") or []
+            flat_list = self._flatten_triplets_entities(entities)
+            return pd.DataFrame(flat_list)
+
+        if normalized_section == "triplets_gaps":
+            gaps = (result.get("triplets_analysis") or {}).get("gaps") or {}
+            flat_list = self._flatten_triplets_gaps(gaps)
             return pd.DataFrame(flat_list)
 
         data = result.get(normalized_section,[])
@@ -340,7 +394,7 @@ class UnihraClient:
         df_ngrams = pd.DataFrame(result.get("ngrams_analysis") or result.get("n_grams_analysis") or[])
         df_gaps = pd.DataFrame(result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or[])
         df_anchors = pd.DataFrame(result.get("anchors_analysis",[]))
-        drmaxs_data = result.get("drmaxs", {})
+        triplets_data = result.get("triplets_analysis") or {}
         structure_data = result.get("page_structure",[])
 
         if filename.endswith(".csv"):
@@ -366,7 +420,7 @@ class UnihraClient:
                     sheet = "Page Structure"
                     flat_struct = self._flatten_structure_list(structure_data)
                     df_struct = pd.DataFrame(flat_struct)
-                    
+
                     cols = df_struct.columns.tolist()
                     if 'url' in cols:
                         cols.insert(0, cols.pop(cols.index('url')))
@@ -381,10 +435,10 @@ class UnihraClient:
                     desired_cols =['lemma', 'recommendation', 'context_snippet', 'gap', 'coverage_percent', 'competitor_avg_score', 'own_score']
                     existing_cols =[c for c in desired_cols if c in df_gaps.columns]
                     other_cols =[c for c in df_gaps.columns if c not in desired_cols]
-                    
+
                     df_gaps_ordered = df_gaps[existing_cols + other_cols]
                     df_gaps_ordered = self._reorder_tech_columns(df_gaps_ordered)
-                    
+
                     df_gaps_ordered.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_gaps_ordered, sheet_type="gaps")
 
@@ -394,25 +448,33 @@ class UnihraClient:
                     df_blocks_ordered = self._reorder_tech_columns(df_blocks)
                     df_blocks_ordered.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_blocks_ordered, sheet_type="word_analysis")
-                
+
                 # 4. N-Grams
                 if not df_ngrams.empty:
                     sheet = "N-Grams"
                     df_ngrams_ordered = self._reorder_tech_columns(df_ngrams)
                     df_ngrams_ordered.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_ngrams_ordered, sheet_type="ngrams")
-                
-                # 5. Vectors
-                if drmaxs_data and isinstance(drmaxs_data, dict):
-                    for subkey, subdata in drmaxs_data.items():
-                        if subdata and isinstance(subdata, list):
-                            df_dr = pd.DataFrame(subdata)
-                            df_dr_ordered = self._reorder_tech_columns(df_dr)
-                            
-                            safe_name = subkey.replace("_", " ").title().replace("By", "")
-                            sheet_name = f"Vectors {safe_name}"[:31]
-                            df_dr_ordered.to_excel(writer, sheet_name=sheet_name, index=False)
-                            if style_output: self._style_worksheet(writer.sheets[sheet_name], df_dr_ordered, sheet_type="vectors")
+
+                # 5. Triplets — Knowledge Graph (only if extended analysis was requested)
+                if triplets_data and isinstance(triplets_data, dict):
+                    entities = triplets_data.get("entities") or []
+                    gaps_block = triplets_data.get("gaps") or {}
+
+                    if entities:
+                        sheet = "Triplets"
+                        df_tr = pd.DataFrame(self._flatten_triplets_entities(entities))
+                        df_tr_ordered = self._reorder_tech_columns(df_tr)
+                        df_tr_ordered.to_excel(writer, sheet_name=sheet, index=False)
+                        if style_output: self._style_worksheet(writer.sheets[sheet], df_tr_ordered, sheet_type="triplets")
+
+                    if gaps_block:
+                        sheet = "Triplets Gaps"
+                        df_tg = pd.DataFrame(self._flatten_triplets_gaps(gaps_block))
+                        if not df_tg.empty:
+                            df_tg_ordered = self._reorder_tech_columns(df_tg)
+                            df_tg_ordered.to_excel(writer, sheet_name=sheet, index=False)
+                            if style_output: self._style_worksheet(writer.sheets[sheet], df_tg_ordered, sheet_type="triplets_gaps")
 
     def _reorder_tech_columns(self, df):
         try:
@@ -431,11 +493,12 @@ class UnihraClient:
 
         header_font = Font(bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="363636", end_color="363636", fill_type="solid")
-        tech_header_font = Font(bold=True, color="000000") 
-        
+        tech_header_font = Font(bold=True, color="000000")
+
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
         red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-        
+        amber_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+
         tech_cols = ['id', 'block_id', 'analysis_id']
 
         # Format Headers
@@ -455,7 +518,7 @@ class UnihraClient:
                 worksheet.column_dimensions[get_column_letter(idx + 1)].hidden = True
                 continue
             max_len = max([len(str(s)) for s in df[col].astype(str).values] + [len(col)])
-            final_width = min(max_len + 2, 70) 
+            final_width = min(max_len + 2, 70)
             worksheet.column_dimensions[get_column_letter(idx + 1)].width = final_width
 
         col_map = {name: i + 1 for i, name in enumerate(df.columns)}
@@ -497,6 +560,44 @@ class UnihraClient:
                         is_missing = True
                     worksheet.cell(row=row, column=lemma_idx).fill = red_fill if is_missing else green_fill
 
+        elif sheet_type == "triplets":
+            # Highlight subject column by tier importance
+            tier_color = {
+                "core":       red_fill,        # most important — highlight strongly
+                "main":       amber_fill,
+                "additional": green_fill,
+                "unique":     PatternFill(fill_type=None),
+            }
+            if 'tier' in col_map and 'subject' in col_map:
+                tier_idx = col_map['tier']
+                subj_idx = col_map['subject']
+                for row in range(2, worksheet.max_row + 1):
+                    tier_val = worksheet.cell(row=row, column=tier_idx).value
+                    fill = tier_color.get(str(tier_val).lower()) if tier_val else None
+                    if fill:
+                        worksheet.cell(row=row, column=subj_idx).fill = fill
+            # Wrap long object / sources cells
+            for col_name in ('object', 'sources', 'predicate'):
+                if col_name in col_map:
+                    idx = col_map[col_name]
+                    for row in range(2, worksheet.max_row + 1):
+                        worksheet.cell(row=row, column=idx).alignment = Alignment(wrap_text=True)
+
+        elif sheet_type == "triplets_gaps":
+            # Colour-code severity column (critical = red, important = amber, unique = green)
+            severity_color = {
+                "critical":  red_fill,
+                "important": amber_fill,
+                "unique":    green_fill,
+            }
+            if 'severity' in col_map:
+                sev_idx = col_map['severity']
+                for row in range(2, worksheet.max_row + 1):
+                    sev_val = worksheet.cell(row=row, column=sev_idx).value
+                    fill = severity_color.get(str(sev_val).lower()) if sev_val else None
+                    if fill:
+                        worksheet.cell(row=row, column=sev_idx).fill = fill
+
         else:
             target_cols =[]
             if sheet_type == "word_analysis":
@@ -504,9 +605,6 @@ class UnihraClient:
                 target_cols = [col_map[c] for c in target_names if c in col_map]
             elif sheet_type == "ngrams":
                 target_names = ["ngram"]
-                target_cols = [col_map[c] for c in target_names if c in col_map]
-            elif sheet_type == "vectors":
-                target_names = ["word"]
                 target_cols = [col_map[c] for c in target_names if c in col_map]
 
             bool_col = 'present_on_own_page'

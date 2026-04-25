@@ -43,12 +43,17 @@ class ReportGenerationError(UnihraApiError):
     """Code 1004: Failed to generate the report."""
     pass
 
+class TripletAnalysisError(UnihraApiError):
+    """Code 1005: Triplets analysis (knowledge graph) extraction failed."""
+    pass
+
 # Mapping specific business logic errors from API codes
 ERROR_CODE_MAP = {
     1001: ParserError,
     1002: AnalysisServiceError,
     1003: CriticalOwnPageError,
     1004: ReportGenerationError,
+    1005: TripletAnalysisError,
 }
 
 def raise_for_error_code(code: int, message: str, details: Any = None):
