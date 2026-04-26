@@ -23,8 +23,7 @@
 | :---: | :--- |
 | **Продукт** | [unihra.ru](https://unihra.ru) — веб-интерфейс |
 | **Документация API** | [unihra.ru/docs](https://unihra.ru/docs) |
-| **API ключ** | Telegram: [@UniHRA_bot](https://t.me/UniHRA_bot) |
-| **Обновления** | [@mncosine](https://t.me/mncosine) |
+| **API ключ** | [unihra.ru](https://unihra.ru) |
 
 </div>
 
@@ -345,6 +344,6 @@ python -m unihra \
 
 **Команда Unihra**
 
-[Telegram — новости](https://t.me/mncosine) · [unihra.ru](https://unihra.ru) · [API ключ — @UniHRA_bot](https://t.me/UniHRA_bot)
+[unihra.ru](https://unihra.ru) · [Документация API](https://unihra.ru/docs)
 
 </div>

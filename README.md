@@ -22,8 +22,7 @@ English · [Русский](docs/README.ru.md)
 | :---: | :--- |
 | **Product** |[unihra.ru](https://unihra.ru) — web interface |
 | **API reference** |[unihra.ru/docs](https://unihra.ru/docs) |
-| **API key** | Telegram: [@UniHRA_bot](https://t.me/UniHRA_bot) |
-| **Updates** | [@mncosine](https://t.me/mncosine) |
+| **API key** | [unihra.ru](https://unihra.ru) |
 
 </div>
 
@@ -344,6 +343,6 @@ The optional **MCP server** lets compatible assistants call Unihra as **tools** 
 
 **Unihra Team**
 
-[Telegram — news](https://t.me/mncosine) · [unihra.ru](https://unihra.ru) ·[API key — @UniHRA_bot](https://t.me/UniHRA_bot)
+[unihra.ru](https://unihra.ru) · [API docs](https://unihra.ru/docs)
 
 </div>
