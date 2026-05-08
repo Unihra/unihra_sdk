@@ -1,6 +1,5 @@
 
 
-
 # Unihra Python SDK
 
 <div align="center">
@@ -9,8 +8,8 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/unihra.svg?style=flat-square)](https://pypi.org/project/unihra/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/Unihra/unihra_sdk/blob/main/LICENSE)
 
-**SEO and semantic analysis for your pages and competitors.**  
-Compare content, surface semantic gaps, and get actionable recommendations using zone analysis and vector semantics.
+**SEO content analysis for your pages and competitors.**  
+Compare content, find umbrella gaps, and get actionable recommendations using zone analysis and knowledge graphs.
 
 English · [Русский](docs/README.ru.md)
 
@@ -30,7 +29,7 @@ English · [Русский](docs/README.ru.md)
 
 ## Features
 
-- **Semantic context (zones)** — weights words by where they appear (title, H1–H6, body) and distance to your target queries, with concrete recommendations (for example, what to add to title or headings).
+- **Umbrella Analysis (zones)** — weights words by where they appear (title, H1–H6, body) and distance to your target queries, with concrete recommendations (for example, what to add to title or headings).
 - **Page structure** — headings, meta tags, and content metrics for your URL and each competitor URL.
 - **Word comparison (TF‑IDF)** — suggested actions per term (add, increase, decrease, ok).
 - **Phrases (n‑grams)** — recurring phrases across competitor pages.
@@ -81,7 +80,7 @@ result = client.analyze(
         "https://competitor.com/top-product",
         "https://market-leader.com/item",
     ],
-    queries=["buy widget", "best widgets 2025"],
+    queries=["buy widget", "best widgets 2026"],
     lang="en",
     url_cookies={
         "https://example.com/my-product": "session_id=abc123; auth=true",
@@ -90,10 +89,10 @@ result = client.analyze(
     verbose=True,
 )
 
-gaps = result.get("semantic_context_analysis", [])
-pages = result.get("page_structure",[])
+gaps = result.get("umbrella_analysis", [])
+pages = result.get("page_structure", [])
 
-print(f"Semantic gap rows: {len(gaps)}")
+print(f"Umbrella gap rows: {len(gaps)}")
 for p in pages:
     print(p["url"], "—", p["meta_tags"]["title"])
 ```
@@ -112,20 +111,20 @@ result = client.analyze(
 
 triplets = result.get("triplets_analysis", {})
 print("Total facts:", triplets.get("stats", {}).get("total_triplets"))
-print("Critical topical gaps:", len(triplets.get("gaps", {}).get("critical", [])))
+print("Critical topical gaps:", len(triplets.get("missing_triplets", {}).get("critical", [])))
 ```
 
 ### 2. Save an Excel report
-
-Sheet names typically include *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N‑Grams*, *Anchors*, and — when `triplet_analysis=True` — *Triplets* and *Triplets Gaps*.
 
 ```python
 client.save_report(result, "seo_report.xlsx")
 ```
 
+Sheet names: *Page Structure*, *Umbrella Gaps*, *Word Analysis*, *N‑Grams*, *Anchors*, and — when `triplet_analysis=True` — *Triplets* and *Triplets Gaps*.
+
 ---
 
-## What’s in the result
+## What's in the result
 
 The SDK returns a **Python dictionary** aligned with the API. Keys are normalized to **snake_case**.
 
@@ -142,7 +141,7 @@ A **list** of pages (yours first, then competitors). Each item includes:
 </details>
 
 <details>
-<summary><b>2. Semantic context analysis</b></summary>
+<summary><b>2. Umbrella Analysis</b></summary>
 
 Zone‑weighted comparison of lemmas vs your queries:
 
@@ -205,7 +204,7 @@ Available only when `triplet_analysis=True`. Extracts **subject → predicate �
   - `tier` — importance bucket: `core` → `main` → `additional` → `unique`
   - `triplets_count`, `sources_count`
   - `triplets[]` — list of `{predicate, object, sources[]}` claims
-- `gaps` — subjects **absent from your page**, grouped by source coverage:
+- `missing_triplets` — subjects **absent from your page**, grouped by source coverage:
   - `critical` — appears on **3+** competitor sites
   - `important` — appears on **2** competitor sites
   - `unique` — appears on **1** competitor site
@@ -225,7 +224,7 @@ Available only when `triplet_analysis=True`. Extracts **subject → predicate �
       ]
     }
   ],
-  "gaps": {"critical": [...], "important": [...], "unique": [...]},
+  "missing_triplets": {"critical": [...], "important": [...], "unique": [...]},
   "stats": {"total_triplets": 412, "gaps_total": 74}
 }
 ```
@@ -287,6 +286,7 @@ python -m unihra \
 | `--retries` | HTTP retry count |
 | `--verbose` | Show progress |
 | `--no-style` | Plain Excel without extra styling |
+| `--limits` | Print API key balance and exit |
 
 You can omit `--key` if the environment variable **`UNIHRA_API_KEY`** is set.  
 Without `--save` and without `--verbose`, JSON is printed to the terminal.
@@ -300,22 +300,21 @@ The optional **MCP server** lets compatible assistants call Unihra as **tools** 
 1. Install: `pip install "unihra[mcp]"` (Python **3.10+**).
 2. Set your API key: environment variable **`UNIHRA_API_KEY`**, or pass `--key` when starting the server.
 3. Start: `python -m unihra.mcp_server` or the command `unihra-mcp`.
-4. Point your client’s MCP settings at that Python and module (see below).
+4. Point your client's MCP settings at that Python and module (see below).
 
 **How it works:** The `unihra_analyze` tool runs the full analysis and saves the result locally, returning only a `result_id` and a compact summary. You then use `unihra_get_*` tools with the `result_id` to retrieve specific data sections on demand — gaps, anchors, words, n‑grams, triplets (Knowledge Graph), or page structure. This lets you explore the full report section by section.
-
-**Cost-aware mode selection.** `unihra_analyze` accepts a `triplet_analysis` boolean. The tool description tells the model to default to `false` (1 credit, standard analysis) and only set it to `true` (5 credits, Knowledge Graph) when the user explicitly asks for fact‑coverage / topical brief / entity audit.
 
 **Available tools:**
 
 | Tool | Purpose |
 |------|---------|
 | `unihra_health` | Check that the service is reachable |
+| `unihra_get_limits` | Check API key balance and daily credit limits |
 | `unihra_analyze` | Primary tool: runs full analysis, saves to disk, returns `result_id` + summary. `triplet_analysis=true` enables the Knowledge Graph (5 credits) |
 | `unihra_list_results` | List all saved analysis results on disk |
 | `unihra_delete_result` | Delete a saved analysis result by `result_id` |
 | `unihra_get_page_structure` | Fetch heading/meta report for a `result_id` |
-| `unihra_get_gaps` | Get semantic gaps and zone recommendations from a `result_id` |
+| `unihra_get_gaps` | Get umbrella gaps and zone recommendations from a `result_id` |
 | `unihra_get_anchors` | Get anchor text (link texts) analysis from a `result_id` |
 | `unihra_get_triplets` | Get Knowledge Graph entities and topical gaps (only for results created with `triplet_analysis=true`) |
 | `unihra_get_word_actions` | TF‑IDF words grouped by action |

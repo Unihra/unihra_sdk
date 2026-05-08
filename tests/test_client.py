@@ -84,7 +84,7 @@ def test_analyze_triplet_mode_flags_payload_and_meta(mock_get, mock_post, client
         b'"triplets_count": 2, "sources_count": 3, '
         b'"triplets": [{"predicate": "does not burn", "object": "yes", '
         b'"sources": ["c1.com", "c2.com"]}]}],'
-        b'"gaps": {"critical": [], "important": [], "unique": []},'
+        b'"missing_triplets": {"critical": [], "important": [], "unique": []},'
         b'"stats": {"total_triplets": 2, "gaps_total": 0}'
         b'}}}'
     )
@@ -203,6 +203,103 @@ def test_analyze_anchors_with_links(mock_get, mock_post, client):
     assert anchors[0]["links"] == ["https://comp1.com/buy", "https://comp2.com/shop"]
 
 
+@patch("unihra.client.requests.Session.post")
+@patch("unihra.client.requests.Session.get")
+def test_umbrella_analysis_key_returned(mock_get, mock_post, client):
+    """API returning 'Umbrella Analysis' key is normalized to umbrella_analysis."""
+    mock_post.return_value.status_code = 200
+    mock_post.return_value.json.return_value = {"task_id": "uuid-umbrella"}
+
+    mock_stream_response = MagicMock()
+    mock_stream_response.status_code = 200
+    mock_stream_response.iter_lines.return_value = [
+        b'data: {"state": "SUCCESS", "result": {"Umbrella Analysis": [{"lemma": "test", "gap": 0.8}]}}'
+    ]
+    mock_get.return_value.__enter__.return_value = mock_stream_response
+
+    result = client.analyze("http://mysite.com", ["http://comp.com"])
+
+    assert "umbrella_analysis" in result
+    assert result["umbrella_analysis"][0]["lemma"] == "test"
+    assert "semantic_context_analysis" not in result
+
+
+@patch("unihra.client.requests.Session.post")
+@patch("unihra.client.requests.Session.get")
+def test_missing_triplets_key_in_triplets(mock_get, mock_post, client):
+    """missing_triplets key in triplets_analysis is accessible via get_dataframe."""
+    mock_post.return_value.status_code = 200
+    mock_post.return_value.json.return_value = {"task_id": "uuid-mt"}
+
+    mock_stream_response = MagicMock()
+    mock_stream_response.status_code = 200
+    mock_stream_response.iter_lines.return_value = [
+        b'data: {"state": "SUCCESS", "result": {"triplets_analysis": {'
+        b'"entities": [], "missing_triplets": {"critical": [{"subject": "GPU"}], "important": [], "unique": []}, '
+        b'"stats": {"total_triplets": 0, "gaps_total": 1}}}}'
+    ]
+    mock_get.return_value.__enter__.return_value = mock_stream_response
+
+    result = client.analyze("http://mysite.com", ["http://comp.com"], triplet_analysis=True)
+
+    ta = result.get("triplets_analysis", {})
+    assert "missing_triplets" in ta
+    assert ta["missing_triplets"]["critical"][0]["subject"] == "GPU"
+
+
+@patch("unihra.client.requests.Session.get")
+def test_get_limits(mock_get, client):
+    """get_limits calls /key/limits and returns the JSON response."""
+    mock_get.return_value.status_code = 200
+    mock_get.return_value.json.return_value = {
+        "plan": "pro", "daily_limit": 5000, "used_today": 3, "remaining_today": 4997
+    }
+
+    limits = client.get_limits()
+
+    called_url = mock_get.call_args.args[0]
+    assert "key/limits" in called_url
+    assert limits["plan"] == "pro"
+    assert limits["remaining_today"] == 4997
+
+
+@patch("unihra.client.requests.Session.get")
+def test_list_analyses(mock_get, client):
+    """list_analyses calls /analyses and returns list."""
+    mock_get.return_value.status_code = 200
+    mock_get.return_value.json.return_value = [{"task_id": "abc", "share_url": None}]
+
+    result = client.list_analyses()
+
+    called_url = mock_get.call_args.args[0]
+    assert called_url.endswith("/analyses")
+    assert result[0]["task_id"] == "abc"
+
+
+@patch("unihra.client.requests.Session.post")
+def test_share_analysis(mock_post, client):
+    """share_analysis calls POST /analyses/{id}/share and returns share URL."""
+    mock_post.return_value.status_code = 200
+    mock_post.return_value.json.return_value = {"share_url": "https://unihra.ru/s/xyz"}
+
+    result = client.share_analysis("task-123")
+
+    called_url = mock_post.call_args.args[0]
+    assert "analyses/task-123/share" in called_url
+    assert result["share_url"] == "https://unihra.ru/s/xyz"
+
+
+@patch("unihra.client.requests.Session.delete")
+def test_unshare_analysis(mock_delete, client):
+    """unshare_analysis calls DELETE /analyses/{id}/share."""
+    mock_delete.return_value.status_code = 204
+
+    client.unshare_analysis("task-123")
+
+    called_url = mock_delete.call_args.args[0]
+    assert "analyses/task-123/share" in called_url
+
+
 def test_save_report_version_tag():
     """The User-Agent reflects the current SDK version (sanity check)."""
     import sys
@@ -221,4 +318,4 @@ def test_save_report_version_tag():
     from unihra.client import UnihraClient
 
     client = UnihraClient(api_key="test_key")
-    assert "1.6.0" in client.session.headers.get("User-Agent", "")
+    assert "1.7.0" in client.session.headers.get("User-Agent", "")

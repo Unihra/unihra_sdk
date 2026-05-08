@@ -11,3 +11,8 @@ build/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+
+# VitePress
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/

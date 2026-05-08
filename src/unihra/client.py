@@ -41,7 +41,7 @@ class UnihraClient:
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "UnihraPythonSDK/1.6.0"
+            "User-Agent": "UnihraPythonSDK/1.7.0"
         })
 
         if max_retries > 0:
@@ -175,7 +175,7 @@ class UnihraClient:
 
         # Mapping internal keys to segment filenames
         segments = {
-            "gaps": "semantic_context_analysis",
+            "gaps": "umbrella_analysis",
             "words": "block_comparison",
             "ngrams": "ngrams_analysis",
             "anchors": "anchors_analysis",
@@ -185,7 +185,12 @@ class UnihraClient:
 
         try:
             for file_key, data_key in segments.items():
-                data = result.get(data_key, [] if data_key != "triplets_analysis" else {})
+                if data_key == "umbrella_analysis":
+                    data = result.get("umbrella_analysis") or result.get("semantic_context_analysis") or []
+                elif data_key == "triplets_analysis":
+                    data = result.get(data_key, {})
+                else:
+                    data = result.get(data_key, [])
 
                 # Применяем очистку перед сохранением
                 cleaned_data = self._strip_id_recursively(data)
@@ -351,8 +356,9 @@ class UnihraClient:
     def get_dataframe(self, result: Dict[str, Any], section: str = "block_comparison"):
         """
         Convert a specific section of the result into a Pandas DataFrame.
-        Supported sections: block_comparison, ngrams_analysis, semantic_context_analysis,
+        Supported sections: block_comparison, ngrams_analysis, umbrella_analysis,
         anchors_analysis, page_structure, triplets_analysis, triplets_gaps.
+        Note: umbrella_analysis was previously named semantic_context_analysis — both are accepted.
         """
         try:
             import pandas as pd
@@ -373,10 +379,15 @@ class UnihraClient:
             flat_list = self._flatten_triplets_entities(entities)
             return pd.DataFrame(flat_list)
 
-        if normalized_section == "triplets_gaps":
-            gaps = (result.get("triplets_analysis") or {}).get("gaps") or {}
-            flat_list = self._flatten_triplets_gaps(gaps)
-            return pd.DataFrame(flat_list)
+        if normalized_section in ("triplets_gaps", "umbrella_analysis", "semantic_context_analysis"):
+            if normalized_section == "triplets_gaps":
+                ta = result.get("triplets_analysis") or {}
+                gaps = ta.get("missing_triplets") or ta.get("gaps") or {}
+                flat_list = self._flatten_triplets_gaps(gaps)
+                return pd.DataFrame(flat_list)
+            # umbrella_analysis / semantic_context_analysis — fall through to generic path below
+            data = result.get("umbrella_analysis") or result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or []
+            return pd.DataFrame(data)
 
         data = result.get(normalized_section,[])
         return pd.DataFrame(data)
@@ -390,10 +401,10 @@ class UnihraClient:
         except ImportError:
             raise UnihraDependencyError("Pandas is required. Run: pip install unihra[report]")
 
-        df_blocks = pd.DataFrame(result.get("block_comparison",[]))
-        df_ngrams = pd.DataFrame(result.get("ngrams_analysis") or result.get("n_grams_analysis") or[])
-        df_gaps = pd.DataFrame(result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or[])
-        df_anchors = pd.DataFrame(result.get("anchors_analysis",[]))
+        df_blocks = pd.DataFrame(result.get("block_comparison", []))
+        df_ngrams = pd.DataFrame(result.get("ngrams_analysis") or result.get("n_grams_analysis") or [])
+        df_gaps = pd.DataFrame(result.get("umbrella_analysis") or result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or [])
+        df_anchors = pd.DataFrame(result.get("anchors_analysis", []))
         triplets_data = result.get("triplets_analysis") or {}
         structure_data = result.get("page_structure",[])
 
@@ -459,7 +470,7 @@ class UnihraClient:
                 # 5. Triplets — Knowledge Graph (only if extended analysis was requested)
                 if triplets_data and isinstance(triplets_data, dict):
                     entities = triplets_data.get("entities") or []
-                    gaps_block = triplets_data.get("gaps") or {}
+                    gaps_block = triplets_data.get("missing_triplets") or triplets_data.get("gaps") or {}
 
                     if entities:
                         sheet = "Triplets"
@@ -475,6 +486,50 @@ class UnihraClient:
                             df_tg_ordered = self._reorder_tech_columns(df_tg)
                             df_tg_ordered.to_excel(writer, sheet_name=sheet, index=False)
                             if style_output: self._style_worksheet(writer.sheets[sheet], df_tg_ordered, sheet_type="triplets_gaps")
+
+    def get_limits(self) -> Dict[str, Any]:
+        """GET /api/v1/key/limits — current API key usage limits and remaining balance."""
+        try:
+            resp = self.session.get(f"{self.api_v1}/key/limits")
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            raise UnihraConnectionError(f"get_limits failed: {e}")
+
+    def list_analyses(self) -> List[Dict[str, Any]]:
+        """GET /api/v1/analyses — list analyses saved under this API key."""
+        try:
+            resp = self.session.get(f"{self.api_v1}/analyses")
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            raise UnihraConnectionError(f"list_analyses failed: {e}")
+
+    def get_analysis(self, task_id: str) -> Dict[str, Any]:
+        """GET /api/v1/analyses/{task_id} — fetch a saved analysis result by task ID."""
+        try:
+            resp = self.session.get(f"{self.api_v1}/analyses/{task_id}")
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            raise UnihraConnectionError(f"get_analysis failed: {e}")
+
+    def share_analysis(self, task_id: str) -> Dict[str, Any]:
+        """POST /api/v1/analyses/{task_id}/share — create a public share link for an analysis."""
+        try:
+            resp = self.session.post(f"{self.api_v1}/analyses/{task_id}/share")
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            raise UnihraConnectionError(f"share_analysis failed: {e}")
+
+    def unshare_analysis(self, task_id: str) -> None:
+        """DELETE /api/v1/analyses/{task_id}/share — revoke the share link for an analysis."""
+        try:
+            resp = self.session.delete(f"{self.api_v1}/analyses/{task_id}/share")
+            resp.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise UnihraConnectionError(f"unshare_analysis failed: {e}")
 
     def _reorder_tech_columns(self, df):
         try:

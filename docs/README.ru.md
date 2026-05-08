@@ -1,4 +1,4 @@
-
+﻿
 
 
 
@@ -10,8 +10,8 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/unihra.svg?style=flat-square)](https://pypi.org/project/unihra/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/Unihra/unihra_sdk/blob/main/LICENSE)
 
-**SEO и семантический анализ ваших страниц и конкурентов.**  
-Сравнивайте контент, находите семантические пробелы и получайте практические рекомендации с использованием зонного анализа и векторной семантики.
+**SEO и контентный анализ ваших страниц и конкурентов.**  
+Сравнивайте контент, находите зонтичные пробелы и получайте практические рекомендации с использованием зонного анализа и графов знаний.
 
 [English](../README.md) · Русский
 
@@ -31,7 +31,7 @@
 
 ## Возможности
 
-- **Семантический контекст (зоны)** — рассчитывает вес слов в зависимости от того, где они находятся (title, H1–H6, текст) и их близости к целевым запросам. Дает конкретные рекомендации (например, что добавить в title или заголовки).
+- **Зонтичный анализ (зоны)** — рассчитывает вес слов в зависимости от того, где они находятся (title, H1–H6, текст) и их близости к целевым запросам. Даёт конкретные рекомендации (например, что добавить в title или заголовки).
 - **Структура страницы** — заголовки, мета-теги и метрики контента для вашего URL и каждого конкурента.
 - **Сравнение слов (TF‑IDF)** — рекомендуемые действия для каждого термина (добавить, увеличить, уменьшить, ок).
 - **Фразы (n‑граммы)** — повторяющиеся фразы на страницах конкурентов.
@@ -82,7 +82,7 @@ result = client.analyze(
         "https://competitor.com/top-product",
         "https://market-leader.com/item",
     ],
-    queries=["купить виджет", "лучшие виджеты 2025"],
+    queries=["купить виджет", "лучшие виджеты 2026"],
     lang="ru",
     url_cookies={
         "https://example.com/my-product": "session_id=abc123; auth=true",
@@ -91,10 +91,10 @@ result = client.analyze(
     verbose=True,
 )
 
-gaps = result.get("semantic_context_analysis", [])
-pages = result.get("page_structure",[])
+gaps = result.get("umbrella_analysis", [])
+pages = result.get("page_structure", [])
 
-print(f"Строк семантических пробелов: {len(gaps)}")
+print(f"Строк зонтичного анализа: {len(gaps)}")
 for p in pages:
     print(p["url"], "—", p["meta_tags"]["title"])
 ```
@@ -113,12 +113,12 @@ result = client.analyze(
 
 triplets = result.get("triplets_analysis", {})
 print("Всего фактов:", triplets.get("stats", {}).get("total_triplets"))
-print("Критические тематические пробелы:", len(triplets.get("gaps", {}).get("critical", [])))
+print("Критические тематические пробелы:", len(triplets.get("missing_triplets", {}).get("critical", [])))
 ```
 
 ### 2. Сохранение отчета в Excel
 
-Отчет содержит листы: *Page Structure*, *Semantic Gaps*, *Word Analysis*, *N‑Grams*, *Anchors* и — при `triplet_analysis=True` — *Triplets* и *Triplets Gaps*.
+Отчет содержит листы: *Page Structure*, *Umbrella Gaps*, *Word Analysis*, *N‑Grams*, *Anchors* и — при `triplet_analysis=True` — *Triplets* и *Triplets Gaps*.
 
 ```python
 client.save_report(result, "seo_report.xlsx")
@@ -143,9 +143,9 @@ SDK возвращает **Python словарь (dict)**, полностью с
 </details>
 
 <details>
-<summary><b>2. Семантический контекст (Semantic context analysis)</b></summary>
+<summary><b>2. Зонтичный анализ (Umbrella Analysis)</b></summary>
 
-Сравнение лемм с учетом зон и запросов:
+Сравнение лемм с учётом зон и таргет-запросов:
 
 - `lemma` — базовая форма слова  
 - `competitor_avg_score`, `own_score` — взвешенные оценки (0.0 у вас часто означает отсутствие слова или слабую зону)  
@@ -303,7 +303,7 @@ python -m unihra \
 3. Запустите: `python -m unihra.mcp_server` или команду `unihra-mcp`.
 4. Укажите путь к этому Python и модулю в настройках MCP вашего клиента (см. ниже).
 
-**Как это работает:** Инструмент `unihra_analyze` запускает полный анализ и сохраняет результат локально, возвращая только `result_id` и краткую сводку. Затем вы используете инструменты `unihra_get_*` вместе с `result_id` для извлечения конкретных разделов по запросу: семантические пробелы, анкоры, слова, n‑граммы, триплеты (Граф знаний) или структура страницы. Это позволяет изучить полный отчёт раздел за разделом.
+**Как это работает:** Инструмент `unihra_analyze` запускает полный анализ и сохраняет результат локально, возвращая только `result_id` и краткую сводку. Затем вы используете инструменты `unihra_get_*` вместе с `result_id` для извлечения конкретных разделов по запросу: зонтичные пробелы, анкоры, слова, n‑граммы, триплеты (Граф знаний) или структура страницы. Это позволяет изучить полный отчёт раздел за разделом.
 
 **Выбор режима с учётом стоимости.** В `unihra_analyze` есть булев параметр `triplet_analysis`. По умолчанию модель использует `false` (1 кредит, стандартный анализ) и переключается на `true` (5 кредитов, Граф знаний) только если пользователь явно просит покрытие фактами / тематический бриф / аудит сущностей.
 
@@ -316,7 +316,7 @@ python -m unihra \
 | `unihra_list_results` | Выводит список всех сохраненных результатов анализа на диске |
 | `unihra_delete_result` | Удаляет сохраненный результат по `result_id` |
 | `unihra_get_page_structure` | Получение структуры заголовков/мета-тегов по `result_id` |
-| `unihra_get_gaps` | Получение семантических пробелов и рекомендаций по зонам из `result_id` |
+| `unihra_get_gaps` | Получение зонтичных пробелов и рекомендаций по зонам из `result_id` |
 | `unihra_get_anchors` | Получение анализа анкоров (текстов ссылок) из `result_id` |
 | `unihra_get_triplets` | Получение сущностей Графа знаний и тематических пробелов (только для результатов, созданных с `triplet_analysis=true`) |
 | `unihra_get_word_actions` | Получение TF‑IDF слов, сгруппированных по действиям |

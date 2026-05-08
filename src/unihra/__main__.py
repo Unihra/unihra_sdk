@@ -9,7 +9,7 @@ def main():
 
     # Required args
     parser.add_argument("--key", help="API Key (or set UNIHRA_API_KEY env var)")
-    parser.add_argument("--own", required=True, help="Your page URL")
+    parser.add_argument("--own", help="Your page URL")
     parser.add_argument("--comp", required=True, action="append", help="Competitor URL (repeatable)")
 
     # Optional Context Query
@@ -27,6 +27,11 @@ def main():
         action="store_true",
         help="Enable extended Knowledge Graph analysis (5 credits instead of 1)"
     )
+    parser.add_argument(
+        "--limits",
+        action="store_true",
+        help="Show current API key usage limits and balance, then exit"
+    )
 
     args = parser.parse_args()
 
@@ -38,8 +43,21 @@ def main():
 
     client = UnihraClient(api_key=api_key, max_retries=args.retries)
 
+    # --limits: show balance and exit
+    if args.limits:
+        try:
+            limits = client.get_limits()
+            print(json.dumps(limits, indent=2, ensure_ascii=False))
+        except UnihraError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if not args.own:
+        print("Error: --own is required for analysis.", file=sys.stderr)
+        sys.exit(1)
+
     # Construct url_cookies if provided via CLI
-    # CLI allows setting cookies for Own Page primarily.
     url_cookies = {}
     if args.cookies:
         url_cookies[args.own] = args.cookies

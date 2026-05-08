@@ -159,7 +159,7 @@ def _build_summary(
     Compact summary returned immediately after analysis.
     Used to decide which unihra_get_* tools to call next.
     """
-    gaps    = result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or []
+    gaps    = result.get("umbrella_analysis") or result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or []
     blocks  = result.get("block_comparison") or []
     ngrams  = result.get("ngrams_analysis") or result.get("n_grams_analysis") or []
     triplets = result.get("triplets_analysis") or {}
@@ -205,7 +205,7 @@ def _build_summary(
         "credits_spent":    5 if triplet_analysis else 1,
         "data_blocks":  {
             "page_structure":            len(struct),
-            "semantic_context_analysis": len(gaps),
+            "umbrella_analysis": len(gaps),
             "block_comparison":          len(blocks),
             "ngrams_analysis":           len(ngrams),
             "anchors_analysis":          len(anchors),
@@ -416,10 +416,11 @@ def build_server(client: UnihraClient) -> Server:
             mcp_types.Tool(
                 name="unihra_get_gaps",
                 description=(
-                    "Get semantic context gaps from a saved analysis.\n\n"
+                    "Get Umbrella Analysis gaps (зонтичный анализ) from a saved analysis.\n\n"
                     "Each gap item: lemma, gap score, coverage_percent (% of competitors using it), "
                     "own_score (0 = word absent or in weak zone), recommendation, context_snippet.\n\n"
-                    "Results are sorted by gap desc (highest priority first).\n"
+                    "Results are sorted by gap desc (highest priority first). "
+                    "The API applies adaptive thresholds automatically — set min_gap=0 to see all results.\n"
                     "Use to build a prioritised content brief: "
                     "which words to add to Title/H1, H2/H3, or body text."
                 ),
@@ -435,15 +436,15 @@ def build_server(client: UnihraClient) -> Server:
                         "min_coverage": {
                             "type": "number",
                             "description": (
-                                "Min competitor coverage % to include. Default 20. "
+                                "Min competitor coverage % to include. Default 15. "
                                 "Lower to 10 when you have only 1-2 competitors."
                             ),
-                            "default": 20.0,
+                            "default": 15.0,
                         },
                         "min_gap": {
                             "type": "number",
-                            "description": "Min gap value. Default 0.5. Lower to 0 for full list.",
-                            "default": 0.5,
+                            "description": "Min gap value. Default 0 (show all — API already applied adaptive thresholds).",
+                            "default": 0.0,
                         },
                         "missing_only": {
                             "type": "boolean",
@@ -495,7 +496,7 @@ def build_server(client: UnihraClient) -> Server:
                     "Two views are returned in the same call:\n"
                     "  1. entities[] — for each subject: tier (core/main/additional/unique), "
                     "triplets_count, sources_count, and the list of (predicate, object, sources) facts.\n"
-                    "  2. gaps{} — subjects ABSENT from your page, grouped by frequency across competitor sources:\n"
+                    "  2. missing_triplets{} — subjects ABSENT from your page, grouped by frequency across competitor sources:\n"
                     "      • critical  — topic appears on 3+ competitor sites\n"
                     "      • important — topic appears on 2 competitor sites\n"
                     "      • unique    — topic appears on 1 competitor site\n\n"
@@ -581,6 +582,17 @@ def build_server(client: UnihraClient) -> Server:
                 },
             ),
             mcp_types.Tool(
+                name="unihra_get_limits",
+                description=(
+                    "Get current API key usage limits and remaining balance.\n\n"
+                    "Returns: plan name, daily limit, used today, remaining today, "
+                    "rate limit (requests/hour), and any active quota restrictions.\n\n"
+                    "Use before running expensive analyses (triplet_analysis=true costs 5 credits) "
+                    "to confirm the key has sufficient balance."
+                ),
+                inputSchema={"type": "object", "properties": {}, "required": []},
+            ),
+            mcp_types.Tool(
                 name="unihra_get_ngrams",
                 description=(
                     "Get n-gram (phrase) analysis from a saved analysis.\n\n"
@@ -631,6 +643,9 @@ def build_server(client: UnihraClient) -> Server:
         try:
             if name == "unihra_health":
                 return _ok(client.health())
+
+            elif name == "unihra_get_limits":
+                return _ok(client.get_limits())
 
             elif name == "unihra_analyze":
                 _require(arguments, "own_page", "competitors")
@@ -700,7 +715,8 @@ def build_server(client: UnihraClient) -> Server:
                 group = bool(arguments.get("group_by_recommendation", False))
 
                 gaps_raw = (
-                    data.get("semantic_context_analysis")
+                    data.get("umbrella_analysis")
+                    or data.get("semantic_context_analysis")
                     or data.get("semantic_context_gaps")
                     or []
                 )
@@ -821,7 +837,7 @@ def build_server(client: UnihraClient) -> Server:
                     }
 
                 if view in ("gaps", "both"):
-                    gaps_block = triplets_block.get("gaps") or {}
+                    gaps_block = triplets_block.get("missing_triplets") or triplets_block.get("gaps") or {}
                     out_gaps: Dict[str, list] = {}
                     for sev in gap_severities:
                         items = gaps_block.get(sev) or []
