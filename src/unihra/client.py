@@ -292,10 +292,16 @@ class UnihraClient:
 
     def _normalize_keys(self, data: Any) -> Any:
         if isinstance(data, dict):
-            return {
+            out = {
                 k.lower().replace(" ", "_").replace("-", "_"): self._normalize_keys(v)
                 for k, v in data.items()
             }
+            # API still emits "N-grams Analysis" → normalised to "n_grams_analysis".
+            # SDK and docs use "ngrams_analysis"; unify here so the public surface
+            # stays single-source-of-truth.
+            if "n_grams_analysis" in out and "ngrams_analysis" not in out:
+                out["ngrams_analysis"] = out.pop("n_grams_analysis")
+            return out
         elif isinstance(data, list):
             return [self._normalize_keys(i) for i in data]
         return data
