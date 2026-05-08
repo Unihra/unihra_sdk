@@ -19,11 +19,9 @@
 
 ### Ресурсы
 
-| | |
-| :---: | :--- |
-| **Продукт** | [unihra.ru](https://unihra.ru) — веб-интерфейс |
-| **Документация API** | [unihra.ru/docs](https://unihra.ru/docs) |
-| **API ключ** | [unihra.ru](https://unihra.ru) |
+| Продукт | Документация API | API ключ |
+| :---: | :---: | :---: |
+| [unihra.ru](https://unihra.ru) | [unihra.ru/docs](https://unihra.ru/docs) | [unihra.ru](https://unihra.ru) |
 
 </div>
 

@@ -17,11 +17,9 @@ English · [Русский](docs/README.ru.md)
 
 ### Resources
 
-| | |
-| :---: | :--- |
-| **Product** |[unihra.ru](https://unihra.ru) — web interface |
-| **API reference** |[unihra.ru/docs](https://unihra.ru/docs) |
-| **API key** | [unihra.ru](https://unihra.ru) |
+| Product | API reference | API key |
+| :---: | :---: | :---: |
+| [unihra.ru](https://unihra.ru) | [unihra.ru/docs](https://unihra.ru/docs) | [unihra.ru](https://unihra.ru) |
 
 </div>
 
