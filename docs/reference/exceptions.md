@@ -10,6 +10,7 @@ from unihra.exceptions import (
     UnihraDependencyError,
     UnihraStorageError,
     UnihraApiError,
+    InsufficientCreditsError,
     ParserError,
     AnalysisServiceError,
     CriticalOwnPageError,
@@ -27,6 +28,7 @@ UnihraError
 ├── UnihraDependencyError     # Missing optional package (pandas, openpyxl)
 ├── UnihraStorageError        # Failed to write files in analyze_and_save()
 └── UnihraApiError            # API returned an error response
+    ├── InsufficientCreditsError # HTTP 402 — balance below the task cost
     ├── ParserError           # code 1001 — a requested page was not included
     ├── AnalysisServiceError  # code 1002 — internal analysis failure
     ├── CriticalOwnPageError  # code 1003 — your own page is unreachable
@@ -38,7 +40,7 @@ UnihraError
 
 ```python
 from unihra import UnihraClient, UnihraError
-from unihra.exceptions import CriticalOwnPageError, ParserError
+from unihra.exceptions import CriticalOwnPageError, InsufficientCreditsError, ParserError
 
 client = UnihraClient(api_key="YOUR_KEY")
 
@@ -47,6 +49,8 @@ try:
         own_page="https://example.com",
         competitors=["https://comp.com"],
     )
+except InsufficientCreditsError:
+    print("Not enough credits. Check client.get_limits() and top up your balance.")
 except CriticalOwnPageError:
     print("Your page is unreachable. Check the URL and try again.")
 except ParserError as e:
@@ -70,6 +74,7 @@ except UnihraApiError as e:
 
 | Code | Exception | Cause |
 |------|-----------|-------|
+| 402 | `InsufficientCreditsError` | Account balance is below the task cost (1 credit standard, 5 with triplets) |
 | 1001 | `ParserError` | A requested page was not included in the analysis |
 | 1002 | `AnalysisServiceError` | Internal analysis service failure |
 | 1003 | `CriticalOwnPageError` | Your own page returned an error or is unreachable |

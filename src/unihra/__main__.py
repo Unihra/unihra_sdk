@@ -2,7 +2,7 @@ import argparse
 import sys
 import json
 import os
-from unihra import UnihraClient, UnihraError
+from unihra import UnihraClient, UnihraError, InsufficientCreditsError
 
 def main():
     parser = argparse.ArgumentParser(description="Unihra CLI: SEO Analysis Tool")
@@ -111,6 +111,10 @@ def main():
             # If not saving and not verbose, dump JSON to stdout
             print(json.dumps(result, indent=2, ensure_ascii=False))
 
+    except InsufficientCreditsError as e:
+        print(f"\n❌ {e}", file=sys.stderr)
+        print("💡 Run with --limits to see your current balance.", file=sys.stderr)
+        sys.exit(1)
     except UnihraError as e:
         print(f"\n❌ Error: {e}", file=sys.stderr)
         sys.exit(1)

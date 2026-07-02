@@ -4,6 +4,7 @@ from unihra import UnihraClient
 from unihra.exceptions import (
     UnihraValidationError,
     UnihraApiError,
+    InsufficientCreditsError,
     ParserError,
     TripletAnalysisError,
 )
@@ -167,6 +168,30 @@ def test_auth_error(mock_post, client):
         client.analyze("http://site.com", ["http://comp.com"])
 
     assert exc.value.code == 401
+
+@patch("unihra.client.requests.Session.post")
+def test_insufficient_credits_error(mock_post, client):
+    """HTTP 402 must map to InsufficientCreditsError, not a network error."""
+    mock_post.return_value.status_code = 402
+    mock_post.return_value.text = "insufficient_credits"
+
+    with pytest.raises(InsufficientCreditsError) as exc:
+        client.analyze("http://site.com", ["http://comp.com"])
+
+    assert exc.value.code == 402
+    assert "1 credit" in str(exc.value)
+
+@patch("unihra.client.requests.Session.post")
+def test_insufficient_credits_error_triplets_cost(mock_post, client):
+    """The 402 message must reflect the triplet task cost (5 credits)."""
+    mock_post.return_value.status_code = 402
+    mock_post.return_value.text = "insufficient_credits"
+
+    with pytest.raises(InsufficientCreditsError) as exc:
+        client.analyze("http://site.com", ["http://comp.com"], triplet_analysis=True)
+
+    assert exc.value.code == 402
+    assert "5 credit" in str(exc.value)
 
 def test_health_check(client):
     """Test the health check method."""
@@ -348,4 +373,4 @@ def test_save_report_version_tag():
     from unihra.client import UnihraClient
 
     client = UnihraClient(api_key="test_key")
-    assert "1.7.0" in client.session.headers.get("User-Agent", "")
+    assert "1.8.0" in client.session.headers.get("User-Agent", "")

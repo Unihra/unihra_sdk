@@ -4,6 +4,7 @@ from .exceptions import (
     UnihraApiError,
     UnihraValidationError,
     UnihraConnectionError,
+    InsufficientCreditsError,
     ParserError,
     CriticalOwnPageError,
     TripletAnalysisError
@@ -15,6 +16,7 @@ __all__ = [
     "UnihraApiError",
     "UnihraValidationError",
     "UnihraConnectionError",
+    "InsufficientCreditsError",
     "ParserError",
     "CriticalOwnPageError",
     "TripletAnalysisError"

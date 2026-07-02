@@ -14,7 +14,8 @@ except ImportError:
 
 from .exceptions import (
     UnihraError, UnihraApiError, UnihraConnectionError,
-    UnihraValidationError, UnihraDependencyError, UnihraStorageError, raise_for_error_code
+    UnihraValidationError, UnihraDependencyError, UnihraStorageError,
+    InsufficientCreditsError, raise_for_error_code
 )
 
 BASE_URL = "https://unihra.ru"
@@ -41,7 +42,7 @@ class UnihraClient:
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "UnihraPythonSDK/1.7.0"
+            "User-Agent": "UnihraPythonSDK/1.8.0"
         })
 
         if max_retries > 0:
@@ -236,6 +237,13 @@ class UnihraClient:
 
             if resp.status_code == 401:
                 raise UnihraApiError("Invalid API Key or unauthorized access", code=401)
+            if resp.status_code == 402:
+                cost = 5 if triplet_analysis else 1
+                raise InsufficientCreditsError(
+                    f"Insufficient credits: this task costs {cost} credit(s). "
+                    "Check your balance with get_limits() and top up at https://unihra.ru.",
+                    code=402,
+                )
             resp.raise_for_status()
 
             task_id = resp.json().get("task_id")

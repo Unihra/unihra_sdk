@@ -27,6 +27,10 @@ class UnihraApiError(UnihraError):
         self.details = details
         super().__init__(f"[{code}] {message}" if code else message)
 
+class InsufficientCreditsError(UnihraApiError):
+    """HTTP 402: The account balance is below the cost of the requested task."""
+    pass
+
 class ParserError(UnihraApiError):
     """Code 1001: A requested page was not included in the analysis."""
     pass

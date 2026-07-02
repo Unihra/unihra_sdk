@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.8.0 (2026-07-03)
+
+### New Features
+
+- **`_meta.page_status` coverage metadata** — lists requested URLs that were included in the analysis and requested URLs that were not included. Available in `analyze()`, `get_dataframe()`, segmented JSON saves, Excel reports, and MCP via `unihra_get_page_status`.
+- **`InsufficientCreditsError`** — HTTP 402 (balance below the task cost) now raises a dedicated exception with the task cost in the message, instead of surfacing as a generic network error. The CLI prints a hint to run `--limits`.
+
+### Fixes
+
+- `ParserError` (code 1001) description clarified: a requested page was not included in the analysis.
+
+## v1.7.1 (2026-05-09)
+
+### Fixes
+
+- Result normalization: the legacy `n_grams_analysis` key is renamed to `ngrams_analysis` during key normalization, so the public surface stays single-source-of-truth.
+
 ## v1.7.0 (2026-05-06)
 
 ### Breaking (backward-compatible)
@@ -9,7 +26,6 @@
 
 ### New Features
 
-- **`_meta.page_status` coverage metadata** — lists requested URLs that were included in the analysis and requested URLs that were not included. Available in `analyze()`, `get_dataframe()`, segmented JSON saves, Excel reports, and MCP via `unihra_get_page_status`.
 - **`get_limits()`** — check API key balance and daily limits (`GET /api/v1/key/limits`).
 - **`list_analyses()`** — list all analyses saved under this API key.
 - **`get_analysis(task_id)`** — fetch a previously created analysis result.
