@@ -96,6 +96,8 @@ Converts a result section to a pandas DataFrame. Requires `pandas`.
 | `umbrella_analysis` | Umbrella gap items (old key `semantic_context_analysis` is accepted as fallback) |
 | `ngrams_analysis` | N-gram phrase data |
 | `anchors_analysis` | Anchor text data |
+| `parsed_pages` | URLs included in the analysis (`_meta.page_status.parsed`) |
+| `failed_pages` | Requested URLs not included in the analysis (`_meta.page_status.failed`) |
 | `page_structure` | Flattened page structure |
 | `triplets_analysis` | Knowledge graph — one row per fact |
 | `triplets_gaps` | Missing topics — one row per gap item |

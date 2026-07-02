@@ -50,6 +50,7 @@ Add to your MCP configuration file:
 | `unihra_analyze` | Run SEO analysis (standard or extended) |
 | `unihra_list_results` | List saved analysis results |
 | `unihra_delete_result` | Delete a saved result |
+| `unihra_get_page_status` | List requested URLs included in the analysis and not included |
 | `unihra_get_gaps` | Get Umbrella Analysis gaps with optional filtering |
 | `unihra_get_anchors` | Get anchor analysis |
 | `unihra_get_word_actions` | Get TF-IDF word actions (add/increase/decrease) |

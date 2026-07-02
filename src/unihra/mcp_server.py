@@ -148,6 +148,31 @@ def _norm_action(raw: str) -> str:
     return _ACTION_MAP.get(raw, raw).lower()
 
 
+def _public_page_items(items: Any) -> list[dict]:
+    public: list[dict] = []
+    if not isinstance(items, list):
+        return public
+    for item in items:
+        if not isinstance(item, dict) or not item.get("url"):
+            continue
+        page = {"url": item["url"]}
+        if "is_own_page" in item:
+            page["is_own_page"] = bool(item.get("is_own_page"))
+        public.append(page)
+    return public
+
+
+def _get_page_status(result: dict) -> dict:
+    meta = result.get("_meta") if isinstance(result, dict) else {}
+    page_status = meta.get("page_status") if isinstance(meta, dict) else {}
+    if not isinstance(page_status, dict):
+        page_status = {}
+    return {
+        "parsed": _public_page_items(page_status.get("parsed")),
+        "failed": _public_page_items(page_status.get("failed")),
+    }
+
+
 def _build_summary(
     result: dict,
     result_id: str,
@@ -165,6 +190,7 @@ def _build_summary(
     triplets = result.get("triplets_analysis") or {}
     struct  = result.get("page_structure") or []
     anchors = result.get("anchors_analysis") or []
+    page_status = _get_page_status(result)
 
     # Top-5 gaps by gap score
     top_gaps = sorted(gaps, key=lambda x: x.get("gap", 0), reverse=True)[:5]
@@ -211,6 +237,10 @@ def _build_summary(
             "anchors_analysis":          len(anchors),
             "triplets_entities":         len((triplets.get("entities") or [])),
             "triplets_gaps_total":       int((triplets.get("stats") or {}).get("gaps_total") or 0),
+        },
+        "page_status_counts": {
+            "parsed": len(page_status["parsed"]),
+            "failed": len(page_status["failed"]),
         },
         "own_page_snapshot": own_snap,
         "top5_priority_gaps": [
@@ -265,7 +295,8 @@ def _build_summary(
 
     summary["next_steps"] = (
         "Use result_id with unihra_get_gaps, unihra_get_anchors, "
-        "unihra_get_word_actions, unihra_get_ngrams, or unihra_get_page_structure "
+        "unihra_get_word_actions, unihra_get_ngrams, unihra_get_page_status, "
+        "or unihra_get_page_structure "
         "to retrieve detailed data slices as needed."
         + (
             " Knowledge Graph: call unihra_get_triplets for entity-level facts "
@@ -409,6 +440,22 @@ def build_server(client: UnihraClient) -> Server:
                             "description": "Return only own page structure. Default false (all pages).",
                             "default": False,
                         },
+                    },
+                    "required": ["result_id"],
+                },
+            ),
+            mcp_types.Tool(
+                name="unihra_get_page_status",
+                description=(
+                    "Get requested URL coverage for a saved analysis.\n\n"
+                    "Returns two public lists only: parsed pages that were included "
+                    "in the analysis and failed pages that were not included. "
+                    "No internal fetch details or provider-specific reasons are exposed."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "result_id": {"type": "string", "description": "From unihra_analyze."},
                     },
                     "required": ["result_id"],
                 },
@@ -704,6 +751,18 @@ def build_server(client: UnihraClient) -> Server:
                     struct = [s for s in struct if s.get("url") == own_page] or [struct[0]]
 
                 return _ok({"page_structure": struct})
+
+            elif name == "unihra_get_page_status":
+                _require(arguments, "result_id")
+                data = _load_result(arguments["result_id"])
+                page_status = _get_page_status(data)
+                return _ok({
+                    "result_id": arguments["result_id"],
+                    "parsed_count": len(page_status["parsed"]),
+                    "failed_count": len(page_status["failed"]),
+                    "parsed": page_status["parsed"],
+                    "failed": page_status["failed"],
+                })
 
             elif name == "unihra_get_gaps":
                 _require(arguments, "result_id")

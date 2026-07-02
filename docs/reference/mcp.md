@@ -65,6 +65,28 @@ Delete a saved result from disk.
 
 ---
 
+## `unihra_get_page_status`
+
+Get requested URL coverage for a saved analysis. The tool returns only public
+page lists: URLs included in the analysis and URLs not included.
+
+| Input | Type | Required | Description |
+|-------|------|----------|-------------|
+| `result_id` | string | ✅ | From `unihra_analyze` |
+
+**Output:**
+```json
+{
+  "result_id": "abc123",
+  "parsed_count": 1,
+  "failed_count": 1,
+  "parsed": [{"url": "https://example.com", "is_own_page": true}],
+  "failed": [{"url": "https://competitor.example", "is_own_page": false}]
+}
+```
+
+---
+
 ## `unihra_get_gaps`
 
 Get Umbrella Analysis gaps — words to add to your page.

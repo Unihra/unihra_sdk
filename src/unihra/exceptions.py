@@ -28,7 +28,7 @@ class UnihraApiError(UnihraError):
         super().__init__(f"[{code}] {message}" if code else message)
 
 class ParserError(UnihraApiError):
-    """Code 1001: Failed to download/parse the target page."""
+    """Code 1001: A requested page was not included in the analysis."""
     pass
 
 class AnalysisServiceError(UnihraApiError):

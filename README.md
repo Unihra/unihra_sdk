@@ -33,6 +33,7 @@ English · [Русский](docs/README.ru.md)
 - **Phrases (n‑grams)** — recurring phrases across competitor pages.
 - **Knowledge Graph (triplets)** — extended mode that mines `subject → predicate → object` facts from competitor texts and surfaces topical gaps (critical / important / unique).
 - **Anchors (link texts)** — identify missing internal and external link texts used by competitors to rank.
+- **Page coverage** — see which requested URLs were included in the analysis and which were not.
 - **Cookies** — optional per‑URL cookie strings for pages behind login or gates.
 - **Streaming** — the client handles the live analysis stream and waits for completion.
 - **Retries** — optional HTTP retries with backoff for unstable networks.
@@ -89,8 +90,11 @@ result = client.analyze(
 
 gaps = result.get("umbrella_analysis", [])
 pages = result.get("page_structure", [])
+page_status = result.get("_meta", {}).get("page_status", {})
+failed = page_status.get("failed", [])
 
 print(f"Umbrella gap rows: {len(gaps)}")
+print(f"Pages not included: {len(failed)}")
 for p in pages:
     print(p["url"], "—", p["meta_tags"]["title"])
 ```
@@ -118,7 +122,7 @@ print("Critical topical gaps:", len(triplets.get("missing_triplets", {}).get("cr
 client.save_report(result, "seo_report.xlsx")
 ```
 
-Sheet names: *Page Structure*, *Umbrella Gaps*, *Word Analysis*, *N‑Grams*, *Anchors*, and — when `triplet_analysis=True` — *Triplets* and *Triplets Gaps*.
+Sheet names: *Page Structure*, *Umbrella Gaps*, *Word Analysis*, *N‑Grams*, *Anchors*, *Parsed Pages*, *Failed Pages*, and — when `triplet_analysis=True` — *Triplets* and *Triplets Gaps*.
 
 ---
 
@@ -300,7 +304,7 @@ The optional **MCP server** lets compatible assistants call Unihra as **tools** 
 3. Start: `python -m unihra.mcp_server` or the command `unihra-mcp`.
 4. Point your client's MCP settings at that Python and module (see below).
 
-**How it works:** The `unihra_analyze` tool runs the full analysis and saves the result locally, returning only a `result_id` and a compact summary. You then use `unihra_get_*` tools with the `result_id` to retrieve specific data sections on demand — gaps, anchors, words, n‑grams, triplets (Knowledge Graph), or page structure. This lets you explore the full report section by section.
+**How it works:** The `unihra_analyze` tool runs the full analysis and saves the result locally, returning only a `result_id` and a compact summary. You then use `unihra_get_*` tools with the `result_id` to retrieve specific data sections on demand — page coverage, gaps, anchors, words, n‑grams, triplets (Knowledge Graph), or page structure. This lets you explore the full report section by section.
 
 **Available tools:**
 
@@ -311,6 +315,7 @@ The optional **MCP server** lets compatible assistants call Unihra as **tools** 
 | `unihra_analyze` | Primary tool: runs full analysis, saves to disk, returns `result_id` + summary. `triplet_analysis=true` enables the Knowledge Graph (5 credits) |
 | `unihra_list_results` | List all saved analysis results on disk |
 | `unihra_delete_result` | Delete a saved analysis result by `result_id` |
+| `unihra_get_page_status` | List requested URLs included in the analysis and not included |
 | `unihra_get_page_structure` | Fetch heading/meta report for a `result_id` |
 | `unihra_get_gaps` | Get umbrella gaps and zone recommendations from a `result_id` |
 | `unihra_get_anchors` | Get anchor text (link texts) analysis from a `result_id` |

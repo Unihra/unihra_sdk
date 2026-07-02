@@ -9,6 +9,7 @@
 
 ### New Features
 
+- **`_meta.page_status` coverage metadata** — lists requested URLs that were included in the analysis and requested URLs that were not included. Available in `analyze()`, `get_dataframe()`, segmented JSON saves, Excel reports, and MCP via `unihra_get_page_status`.
 - **`get_limits()`** — check API key balance and daily limits (`GET /api/v1/key/limits`).
 - **`list_analyses()`** — list all analyses saved under this API key.
 - **`get_analysis(task_id)`** — fetch a previously created analysis result.

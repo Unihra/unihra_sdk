@@ -70,6 +70,14 @@ class FakeClient:
             "block_comparison": [],
             "ngrams_analysis": [],
             "page_structure": [],
+            "_meta": {
+                "page_status": {
+                    "parsed": [{"url": kwargs["own_page"], "is_own_page": True}],
+                    "failed": [
+                        {"url": kwargs["competitors"][0], "is_own_page": False}
+                    ],
+                }
+            },
         }
         if kwargs.get("triplet_analysis"):
             base["triplets_analysis"] = {
@@ -132,6 +140,7 @@ def test_analyze_and_save_workflow(mcp_server_module, tmp_path):
     assert payload["triplet_analysis"] is False
     assert payload["credits_spent"] == 1
     assert "data_blocks" in payload
+    assert payload["page_status_counts"] == {"parsed": 1, "failed": 1}
     # No triplets in standard mode
     assert "triplets_summary" not in payload
 
@@ -141,6 +150,27 @@ def test_analyze_and_save_workflow(mcp_server_module, tmp_path):
     result_id = payload["result_id"]
     saved_file = tmp_path / "results" / f"{result_id}.json"
     assert saved_file.exists()
+
+
+def test_get_page_status_returns_public_url_coverage(mcp_server_module, tmp_path):
+    client = FakeClient(tmp_path / "results")
+    server = mcp_server_module.build_server(client)
+
+    analyze_res = asyncio.run(server._call_tool_handler("unihra_analyze", {
+        "own_page": "https://site.com",
+        "competitors": ["https://blocked.example"],
+    }))
+    result_id = _tool_result_payload(analyze_res)["result_id"]
+
+    status_res = asyncio.run(server._call_tool_handler("unihra_get_page_status", {
+        "result_id": result_id,
+    }))
+    payload = _tool_result_payload(status_res)
+
+    assert payload["parsed"] == [{"url": "https://site.com", "is_own_page": True}]
+    assert payload["failed"] == [{"url": "https://blocked.example", "is_own_page": False}]
+    assert "reason" not in payload["failed"][0]
+    assert "status_code" not in payload["failed"][0]
 
 
 def test_analyze_with_triplets_flag_propagates(mcp_server_module, tmp_path):

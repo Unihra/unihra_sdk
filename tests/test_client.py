@@ -226,6 +226,36 @@ def test_umbrella_analysis_key_returned(mock_get, mock_post, client):
 
 @patch("unihra.client.requests.Session.post")
 @patch("unihra.client.requests.Session.get")
+def test_failed_pages_key_returned_and_dataframe_supported(mock_get, mock_post, client):
+    """API returns page coverage outside the analysis result."""
+    mock_post.return_value.status_code = 200
+    mock_post.return_value.json.return_value = {"task_id": "uuid-failed-pages"}
+
+    mock_stream_response = MagicMock()
+    mock_stream_response.status_code = 200
+    mock_stream_response.iter_lines.return_value = [
+        (
+            b'data: {"state": "SUCCESS", "result": {"Umbrella Analysis": []}, '
+            b'"page_status": {"parsed": [{"url": "https://ok.example", "is_own_page": true}], '
+            b'"failed": [{"url": "https://blocked.example", "is_own_page": false}]}}'
+        )
+    ]
+    mock_get.return_value.__enter__.return_value = mock_stream_response
+
+    result = client.analyze("http://mysite.com", ["http://comp.com"])
+
+    assert "failed_pages" not in result
+    assert result["_meta"]["page_status"]["failed"] == [
+        {"url": "https://blocked.example", "is_own_page": False}
+    ]
+    parsed_df = client.get_dataframe(result, "parsed_pages")
+    assert list(parsed_df["url"]) == ["https://ok.example"]
+    df = client.get_dataframe(result, "failed_pages")
+    assert list(df["url"]) == ["https://blocked.example"]
+
+
+@patch("unihra.client.requests.Session.post")
+@patch("unihra.client.requests.Session.get")
 def test_missing_triplets_key_in_triplets(mock_get, mock_post, client):
     """missing_triplets key in triplets_analysis is accessible via get_dataframe."""
     mock_post.return_value.status_code = 200

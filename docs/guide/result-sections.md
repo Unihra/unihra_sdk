@@ -142,6 +142,30 @@ own = struct[0]  # first item is usually your page
 # }
 ```
 
+## `_meta.page_status`
+
+`_meta.page_status.parsed` lists pages that were included in the analysis.
+`_meta.page_status.failed` lists requested pages that were not included. This
+metadata intentionally exposes only URLs, not internal fetch details.
+
+```python
+page_status = result.get("_meta", {}).get("page_status", {})
+parsed = page_status.get("parsed", [])
+failed = page_status.get("failed", [])
+# [
+#   {
+#     "url": "https://competitor.example/page",
+#     "is_own_page": False
+#   },
+#   ...
+# ]
+```
+
+| Field | Description |
+|-------|-------------|
+| `url` | Page URL that was requested |
+| `is_own_page` | `true` for your page, `false` for a competitor page |
+
 ## `triplets_analysis` *(extended mode only)*
 
 Available when `triplet_analysis=True`. Contains a **Knowledge Graph** extracted from all competitor pages.

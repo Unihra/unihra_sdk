@@ -41,6 +41,7 @@ A single `result` dict with these sections:
 | `ngrams_analysis` | 2–3 word phrase patterns used by competitors |
 | `anchors_analysis` | Anchor texts with their `href` URLs |
 | `page_structure` | Meta title, H1–H6 outline, content volume per page |
+| `_meta.page_status` | Requested URL coverage: included and not included |
 | `triplets_analysis` | Knowledge graph: entities, facts, topical gaps *(extended mode only)* |
 | `_meta` | Task ID, credits spent, analysis mode |
 

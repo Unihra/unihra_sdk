@@ -179,6 +179,8 @@ class UnihraClient:
             "words": "block_comparison",
             "ngrams": "ngrams_analysis",
             "anchors": "anchors_analysis",
+            "parsed_pages": "parsed_pages",
+            "failed_pages": "failed_pages",
             "triplets": "triplets_analysis",
             "structure": "page_structure"
         }
@@ -189,6 +191,10 @@ class UnihraClient:
                     data = result.get("umbrella_analysis") or result.get("semantic_context_analysis") or []
                 elif data_key == "triplets_analysis":
                     data = result.get(data_key, {})
+                elif data_key == "parsed_pages":
+                    data = self._get_page_status(result).get("parsed", [])
+                elif data_key == "failed_pages":
+                    data = self._get_page_status(result).get("failed", [])
                 else:
                     data = result.get(data_key, [])
 
@@ -259,11 +265,13 @@ class UnihraClient:
 
                             if state == "SUCCESS":
                                 raw_result = data.get("result", {})
+                                page_status = self._normalize_keys(data.get("page_status") or {})
                                 normalized_result = self._normalize_keys(raw_result)
                                 normalized_result["_meta"] = {
                                     "task_id": task_id,
                                     "triplet_analysis": bool(triplet_analysis),
                                     "credits_spent": 5 if triplet_analysis else 1,
+                                    "page_status": page_status,
                                 }
 
                                 if lang == 'en':
@@ -277,6 +285,7 @@ class UnihraClient:
                                     final_result['page_structure'] = structure_data
 
                                 data["result"] = final_result
+                                data["page_status"] = page_status
                                 yield data
                                 break
 
@@ -305,6 +314,19 @@ class UnihraClient:
         elif isinstance(data, list):
             return [self._normalize_keys(i) for i in data]
         return data
+
+    def _get_page_status(self, result: Dict[str, Any]) -> Dict[str, list]:
+        meta = result.get("_meta") if isinstance(result, dict) else {}
+        page_status = meta.get("page_status") if isinstance(meta, dict) else None
+        if isinstance(page_status, dict):
+            return {
+                "parsed": page_status.get("parsed") or [],
+                "failed": page_status.get("failed") or [],
+            }
+        return {
+            "parsed": result.get("parsed_pages", []),
+            "failed": result.get("failed_pages", []),
+        }
 
     def _translate_action_values(self, result: Dict[str, Any]) -> Dict[str, Any]:
         if "block_comparison" in result and isinstance(result["block_comparison"], list):
@@ -363,7 +385,8 @@ class UnihraClient:
         """
         Convert a specific section of the result into a Pandas DataFrame.
         Supported sections: block_comparison, ngrams_analysis, umbrella_analysis,
-        anchors_analysis, page_structure, triplets_analysis, triplets_gaps.
+        anchors_analysis, parsed_pages, failed_pages, page_structure, triplets_analysis,
+        triplets_gaps.
         Note: umbrella_analysis was previously named semantic_context_analysis — both are accepted.
         """
         try:
@@ -384,6 +407,11 @@ class UnihraClient:
             entities = (result.get("triplets_analysis") or {}).get("entities") or []
             flat_list = self._flatten_triplets_entities(entities)
             return pd.DataFrame(flat_list)
+
+        if normalized_section in ("parsed_pages", "failed_pages"):
+            page_status = self._get_page_status(result)
+            key = "parsed" if normalized_section == "parsed_pages" else "failed"
+            return pd.DataFrame(page_status.get(key, []))
 
         if normalized_section in ("triplets_gaps", "umbrella_analysis", "semantic_context_analysis"):
             if normalized_section == "triplets_gaps":
@@ -411,6 +439,9 @@ class UnihraClient:
         df_ngrams = pd.DataFrame(result.get("ngrams_analysis") or result.get("n_grams_analysis") or [])
         df_gaps = pd.DataFrame(result.get("umbrella_analysis") or result.get("semantic_context_analysis") or result.get("semantic_context_gaps") or [])
         df_anchors = pd.DataFrame(result.get("anchors_analysis", []))
+        page_status = self._get_page_status(result)
+        df_parsed_pages = pd.DataFrame(page_status.get("parsed", []))
+        df_failed_pages = pd.DataFrame(page_status.get("failed", []))
         triplets_data = result.get("triplets_analysis") or {}
         structure_data = result.get("page_structure",[])
 
@@ -431,6 +462,18 @@ class UnihraClient:
                     df_anchors_ordered = self._reorder_tech_columns(df_anchors)
                     df_anchors_ordered.to_excel(writer, sheet_name=sheet, index=False)
                     if style_output: self._style_worksheet(writer.sheets[sheet], df_anchors_ordered, sheet_type="anchors")
+
+                if not df_parsed_pages.empty:
+                    sheet = "Parsed Pages"
+                    df_parsed_pages_ordered = self._reorder_tech_columns(df_parsed_pages)
+                    df_parsed_pages_ordered.to_excel(writer, sheet_name=sheet, index=False)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_parsed_pages_ordered, sheet_type="page_urls")
+
+                if not df_failed_pages.empty:
+                    sheet = "Failed Pages"
+                    df_failed_pages_ordered = self._reorder_tech_columns(df_failed_pages)
+                    df_failed_pages_ordered.to_excel(writer, sheet_name=sheet, index=False)
+                    if style_output: self._style_worksheet(writer.sheets[sheet], df_failed_pages_ordered, sheet_type="page_urls")
 
                 # 1. Page Structure
                 if structure_data:
@@ -608,6 +651,13 @@ class UnihraClient:
                 idx = col_map['links']
                 for row in range(2, worksheet.max_row + 1):
                     worksheet.cell(row=row, column=idx).alignment = Alignment(wrap_text=True)
+
+        elif sheet_type == "page_urls":
+            for col_name in ('url',):
+                if col_name in col_map:
+                    idx = col_map[col_name]
+                    for row in range(2, worksheet.max_row + 1):
+                        worksheet.cell(row=row, column=idx).alignment = Alignment(wrap_text=True)
 
         elif sheet_type == "gaps":
             if 'own_score' in col_map and 'lemma' in col_map:

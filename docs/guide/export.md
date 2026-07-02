@@ -13,6 +13,8 @@ Generates a multi-sheet workbook:
 | Sheet | Content |
 |-------|---------|
 | **Anchors** | Anchor text analysis with frequency and href links |
+| **Parsed Pages** | URLs included in the analysis |
+| **Failed Pages** | Requested URLs not included in the analysis |
 | **Page Structure** | Meta titles, H1, headings, content volume |
 | **Umbrella Gaps** | Umbrella analysis — lemmas to add with recommendations |
 | **Word Analysis** | TF-IDF words with action labels |
@@ -48,6 +50,8 @@ df_gaps    = client.get_dataframe(result, "umbrella_analysis")
 df_words   = client.get_dataframe(result, "block_comparison")
 df_ngrams  = client.get_dataframe(result, "ngrams_analysis")
 df_anchors = client.get_dataframe(result, "anchors_analysis")
+df_parsed  = client.get_dataframe(result, "parsed_pages")
+df_failed  = client.get_dataframe(result, "failed_pages")
 df_struct  = client.get_dataframe(result, "page_structure")
 
 # Triplets (extended mode only)
